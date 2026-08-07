@@ -20,7 +20,7 @@ function Evaluation() {
           <div className="label">Human Intervention</div>
         </div>
       </div>
-      <div className="glass-card" style={{ padding: 20 }}>
+      <div className="card" style={{ padding: 20 }}>
         <h2 className="section-title">Recent Evaluation Runs</h2>
         <p style={{ fontSize: 14, color: "var(--text-secondary)" }}>
           Evaluation harness results will appear here after scheduled runs complete.
