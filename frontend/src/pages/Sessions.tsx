@@ -25,32 +25,26 @@ const mockSessions = [
 ];
 
 function statusClass(status: string) {
-  if (status === "completed") return "success";
-  if (status === "failed") return "danger";
-  if (status === "reflecting") return "warning";
-  return "info";
+  if (status === "completed") return "badge-success";
+  if (status === "failed") return "badge-danger";
+  if (status === "reflecting") return "badge-warning";
+  return "badge-info";
 }
 
 function Sessions() {
   return (
     <div>
       <h1 className="page-title">Active Sessions</h1>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="card-list">
         {mockSessions.map((s) => (
-          <Link
-            key={s.id}
-            to={`/sessions/${s.id}`}
-            style={{ textDecoration: "none", color: "inherit" }}
-          >
-            <div className="glass-card" style={{ padding: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{s.issue}</div>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>
-                  {s.repo} · {s.id} · iteration {s.iteration}
-                </div>
+          <Link key={s.id} to={`/sessions/${s.id}`} className="card session-row">
+            <div>
+              <div className="title">{s.issue}</div>
+              <div className="meta">
+                {s.repo} · {s.id} · iteration {s.iteration}
               </div>
-              <span className={`clay-badge ${statusClass(s.status)}`}>{s.status}</span>
             </div>
+            <span className={`badge ${statusClass(s.status)}`}>{s.status}</span>
           </Link>
         ))}
       </div>
