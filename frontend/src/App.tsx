@@ -12,7 +12,7 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app-shell">
-        <header className="top-nav glass-card">
+        <header className="top-nav">
           <div className="logo">Autonomous Coding Agent</div>
           <nav>
             <NavLink to="/" end>
