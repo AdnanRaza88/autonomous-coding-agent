@@ -5,6 +5,7 @@ import SessionDetail from "./pages/SessionDetail";
 import Settings from "./pages/Settings";
 import Evaluation from "./pages/Evaluation";
 import History from "./pages/History";
+import Chat from "./pages/Chat";
 import "./styles/tokens.css";
 import "./styles/layout.css";
 
@@ -18,6 +19,7 @@ function App() {
             <NavLink to="/" end>
               Dashboard
             </NavLink>
+            <NavLink to="/chat">Chat</NavLink>
             <NavLink to="/sessions">Sessions</NavLink>
             <NavLink to="/evaluation">Evaluation</NavLink>
             <NavLink to="/history">History</NavLink>
@@ -27,6 +29,7 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/chat" element={<Chat />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/sessions/:id" element={<SessionDetail />} />
             <Route path="/settings" element={<Settings />} />
