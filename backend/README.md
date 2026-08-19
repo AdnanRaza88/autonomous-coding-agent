@@ -6,17 +6,45 @@ Standalone FastAPI service. Deploy this folder on **Railway**, Render, Fly, or A
 
 - Chat / issue → plan → code → GitHub branch commit → PR
 - WebSocket live session events
-- LLM via **Groq** (OpenAI-compatible) by default
+- **Free-tier multi-provider LLM router** (simple Omni-inspired fallback)
 
-## Env vars (Railway)
+## Free-tier LLM Router
+
+File: `agent/llm_router.py`
+
+You can add multiple free API keys. The router tries them in priority order and automatically falls back if one hits rate-limit or fails.
+
+Supported out of the box:
+- Groq (fast free)
+- Cerebras (large daily free)
+- DeepSeek (free credits)
+- OpenAI (if you still have free credits)
+- Any custom OpenAI-compatible endpoint (including local OmniRoute)
+
+### How to use in nodes
+
+```python
+from agent.llm_router import get_router
+
+router = get_router()
+result = await router.chat([
+    {"role": "system", "content": "You are a senior coding agent."},
+    {"role": "user", "content": "Write a plan for this issue..."},
+])
+print(result["content"])
+print("Used provider:", result["provider"])
+```
+
+### Env vars (Railway / local)
 
 | Variable | Required | Example |
 |----------|----------|---------|
-| `GROQ_API_KEY` | Yes | `gsk_...` |
+| `GROQ_API_KEY` | Recommended | `gsk_...` |
+| `CEREBRAS_API_KEY` | Optional | free key from cerebras.ai |
+| `DEEPSEEK_API_KEY` | Optional | free key from platform.deepseek.com |
+| `OPENAI_API_KEY` | Optional | if you have free credits |
+| `LLM_BASE_URL` | Optional | `http://localhost:20128/v1` (if using OmniRoute) |
 | `GITHUB_TOKEN` | Yes | `ghp_...` (scope: `repo`) |
-| `LLM_PROVIDER` | No | `groq` (default) |
-| `LLM_MODEL` | No | `llama-3.3-70b-versatile` |
-| `LLM_BASE_URL` | No | `https://api.groq.com/openai/v1` |
 | `CORS_ORIGINS` | Yes | your Vercel URL + localhost |
 | `PORT` | Auto | Railway sets this |
 
@@ -28,7 +56,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# edit .env
+# edit .env and put your free keys
 uvicorn agent.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -49,10 +77,3 @@ Set on Vercel / local frontend:
 ```
 VITE_API_URL=https://YOUR-RAILWAY-URL
 ```
-
-That is the only Vite API URL — it is the backend base URL.
-
-## AWS free tier note
-
-- EC2 t2.micro / t3.micro can run this API.
-- AWS free tier is limited; Railway is simpler for this stack.
