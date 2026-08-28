@@ -1,24 +1,25 @@
-export type ProposedSubtask = {
+export type SuggestedSubtask = {
   title: string
   instructions: string
 }
 
-export type SpawnRequest = {
-  parentTaskId: string
+export type NeedsSubtasksSignal = {
+  type: "needs_subtasks"
   reason: string
-  proposed: ProposedSubtask[]
+  suggestedSubtasks: SuggestedSubtask[]
 }
 
 const FENCE = /```(?:json)?\s*([\s\S]*?)```/gi
+const DEFAULT_REASON = "further decomposition required"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   return value as Record<string, unknown>
 }
 
-function readProposed(raw: unknown): ProposedSubtask[] {
+function readSuggested(raw: unknown): SuggestedSubtask[] {
   if (!Array.isArray(raw)) return []
-  const out: ProposedSubtask[] = []
+  const out: SuggestedSubtask[] = []
   for (const item of raw) {
     const rec = asRecord(item)
     if (!rec) continue
@@ -35,30 +36,32 @@ function readProposed(raw: unknown): ProposedSubtask[] {
   return out
 }
 
-function interpretObject(obj: Record<string, unknown>, parentTaskId: string): SpawnRequest | null {
-  const flagged =
+function flagged(obj: Record<string, unknown>): boolean {
+  return (
+    obj.type === "needs_subtasks" ||
     obj.needs_subtasks === true ||
     obj.needsSubtasks === true ||
     obj.signal === "needs_subtasks"
+  )
+}
 
-  if (!flagged) return null
-
-  const proposed = readProposed(obj.subtasks ?? obj.proposed ?? obj.tasks)
+function toSignal(obj: Record<string, unknown>): NeedsSubtasksSignal | null {
+  if (!flagged(obj)) return null
   const reason =
     typeof obj.reason === "string" && obj.reason.trim()
       ? obj.reason.trim()
-      : typeof obj.message === "string" && obj.message.trim()
-        ? obj.message.trim()
-        : "Task requires further decomposition"
-
+      : DEFAULT_REASON
+  const suggestedSubtasks = readSuggested(
+    obj.suggestedSubtasks ?? obj.subtasks ?? obj.proposed ?? obj.tasks
+  )
   return {
-    parentTaskId,
+    type: "needs_subtasks",
     reason,
-    proposed,
+    suggestedSubtasks,
   }
 }
 
-function tryParseJson(text: string): unknown | undefined {
+function tryParse(text: string): unknown | undefined {
   try {
     return JSON.parse(text)
   } catch {
@@ -117,12 +120,10 @@ function objectsNearFlags(output: string): string[] {
   return found
 }
 
-function collectCandidates(output: string): string[] {
+function candidates(output: string): string[] {
   const chunks: string[] = []
   const trimmed = output.trim()
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    chunks.push(trimmed)
-  }
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) chunks.push(trimmed)
 
   FENCE.lastIndex = 0
   let match: RegExpExecArray | null
@@ -131,42 +132,46 @@ function collectCandidates(output: string): string[] {
     if (inner) chunks.push(inner)
   }
 
-  for (const slice of objectsNearFlags(output)) {
-    chunks.push(slice)
-  }
-
+  for (const slice of objectsNearFlags(output)) chunks.push(slice)
   return chunks
 }
 
-export function parseSpawnSignal(output: string, parentTaskId: string): SpawnRequest | null {
-  if (!output || typeof output !== "string") return null
-
-  for (const chunk of collectCandidates(output)) {
-    const parsed = tryParseJson(chunk)
-    if (parsed === undefined) continue
-    if (Array.isArray(parsed)) {
-      for (const item of parsed) {
-        const rec = asRecord(item)
-        if (!rec) continue
-        const hit = interpretObject(rec, parentTaskId)
-        if (hit) return hit
-      }
-      continue
+function interpret(parsed: unknown): NeedsSubtasksSignal | null {
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) {
+      const rec = asRecord(item)
+      if (!rec) continue
+      const hit = toSignal(rec)
+      if (hit) return hit
     }
-    const rec = asRecord(parsed)
-    if (!rec) continue
-    const hit = interpretObject(rec, parentTaskId)
+    return null
+  }
+  const rec = asRecord(parsed)
+  return rec ? toSignal(rec) : null
+}
+
+export function parseNeedsSubtasks(output: string): NeedsSubtasksSignal | null {
+  if (!output || typeof output !== "string") return null
+  for (const chunk of candidates(output)) {
+    const parsed = tryParse(chunk)
+    if (parsed === undefined) continue
+    const hit = interpret(parsed)
     if (hit) return hit
   }
-
   return null
 }
 
-export function spawnSystemHint(): string {
-  return [
-    "If the assigned work cannot be completed as a single unit, do not invent a partial solution.",
-    "Instead return only a JSON object of this exact shape and nothing else:",
-    '{"needs_subtasks":true,"reason":"short explanation","subtasks":[{"title":"...","instructions":"..."}]}',
-    "The orchestrator will re-plan that branch. Do not attempt to spawn or run child agents yourself.",
-  ].join(" ")
+export function isNeedsSubtasks(output: string): boolean {
+  return parseNeedsSubtasks(output) !== null
+}
+
+export function formatNeedsSubtasks(signal: NeedsSubtasksSignal): string {
+  return JSON.stringify({
+    type: "needs_subtasks",
+    reason: signal.reason,
+    suggestedSubtasks: signal.suggestedSubtasks.map((s) => ({
+      title: s.title,
+      instructions: s.instructions,
+    })),
+  })
 }
