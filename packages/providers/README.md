@@ -1,87 +1,89 @@
 # @agent-core/providers
 
-Provider layer for Agent Core. One adapter shape for every LLM backend so the rest of the system never branches on vendor.
+Provider layer for Agent Core. One adapter face for every LLM backend so the rest of the system never branches on vendor.
 
 ## Public API
 
 ```ts
-import { getAdapter, listBuiltinProviders, ProviderError } from "@agent-core/providers"
+import {
+  getAdapter,
+  listBuiltinProviders,
+  getProviderModels,
+  connectProvider,
+  chat,
+  streamChat,
+  chatReliable,
+  waitForRegistry,
+  refreshProviderRegistry,
+  ProviderError,
+} from "@agent-core/providers"
 import type { ProviderConfig, ChatMessage } from "@agent-core/types"
 
-const providers = listBuiltinProviders()
-// [{ id, name, defaultBaseUrl }, ...] — sourced from models.dev, cached locally
+await waitForRegistry()
 
-const adapter = getAdapter({
+const providers = listBuiltinProviders()
+const models = getProviderModels("groq")
+
+const config: ProviderConfig = {
   id: "groq",
   baseUrl: "https://api.groq.com/openai/v1",
   apiKey: userKey,
   model: "llama-3.3-70b-versatile",
-  contextWindow: 128000,
-})
+  contextWindow: 131072,
+}
 
+const probe = await connectProvider(config)
+if (!probe.ok) throw probe.error
+
+const adapter = getAdapter(config)
 const reply = await adapter.chat(config, [
   { role: "system", content: "You are a coding agent." },
-  { role: "user", content: "List the files in src/" },
+  { role: "user", content: "List files in src/" },
 ])
+
+await chatReliable(config, [{ role: "user", content: "hi" }], { maxAttempts: 3 })
+
+for await (const token of streamChat(config, [{ role: "user", content: "hi" }])) {
+  process.stdout.write(token)
+}
 ```
 
-`ProviderConfig` is always supplied by the caller (settings UI / orchestrator). This package never reads API keys from the environment.
+`ProviderConfig` is always supplied by the caller. This package never reads API keys from the environment.
 
-## How the catalog works
+## Capabilities
 
-At first use the package fetches `https://models.dev/api.json` (the same registry OpenCode and Mastra use), stores it in SQLite under `~/.agent-core/cache/models-dev.sqlite`, and refreshes every 24 hours. If the network request fails, the previous cache is used. Override the cache directory with `AGENT_CORE_CACHE_DIR`.
-
-Ollama is always present in the list even when models.dev omits it, defaulting to `http://127.0.0.1:11434/v1`.
-
-## Adapter selection
-
-| Provider shape | Implementation |
+| Capability | Status |
 |---|---|
-| OpenAI-compatible HTTP (`/chat/completions`) | Shared adapter (Groq, OpenAI, OpenRouter, Ollama, LM Studio, …) |
-| Raw Anthropic Messages API | Thin translation in `anthropic.ts` |
-| Raw Google Generative Language API | Thin translation in `google.ts` |
-
-Selection is driven by the provider `id` and the `npm` field from models.dev. Everything else goes through the OpenAI-compatible path.
+| models.dev catalog (200+ providers) | SQLite cache, 24h TTL, stale fallback |
+| OpenAI-compatible HTTP | Shared adapter + SSE streaming |
+| Anthropic Messages API | Thin translator + beta headers |
+| Google Gemini generateContent | Thin translator + block-reason handling |
+| Typed errors | timeout, rate_limit, auth, invalid_request, server, network, context_overflow, quota, model_not_found |
+| Connection probe | `connectProvider` validates key/baseUrl before agent runs |
+| Retry | `chatReliable` exponential backoff on retryable codes |
+| Model listing | `getProviderModels` id, name, contextWindow, cost |
 
 ## Errors
 
-Failures are thrown as `ProviderError` with:
+`ProviderError` fields: `code`, `status`, `providerId`, `retryable`, `responseBody`.
 
-- `code`: `timeout` | `rate_limit` | `auth` | `invalid_request` | `server` | `network` | `unknown`
-- `status` (HTTP status when available)
-- `providerId`
-- `retryable` (true for timeout, rate limit, server, network)
+Upstream should branch on `code` and `retryable` without string matching.
 
-Upstream modules (orchestrator / subagents) can branch on `code` and `retryable` without parsing strings.
+## Catalog
 
-## Standalone check
-
-From the monorepo root:
-
-```bash
-npm install
-node --experimental-strip-types -e '
-  import { listBuiltinProviders, getAdapter } from "./packages/providers/src/index.ts"
-  const list = listBuiltinProviders()
-  console.log("providers", list.length)
-  console.log(list.find(p => p.id === "groq") || list[0])
-'
-```
-
-To exercise a live call, pass a real `ProviderConfig` with a valid key; the package does not ship credentials.
+Fetches `https://models.dev/api.json` on first use, stores under `~/.agent-core/cache/models-dev.sqlite` (override with `AGENT_CORE_CACHE_DIR`). Ollama is always present at `http://127.0.0.1:11434/v1`.
 
 ## Layout
 
 ```
-packages/providers/
-  src/
-    index.ts           getAdapter, listBuiltinProviders, ProviderError
-    registry.ts        models.dev fetch + SQLite cache
-    openai-compat.ts   shared /chat/completions client
-    anthropic.ts       Anthropic Messages client
-    google.ts          Gemini generateContent client
-    errors.ts          ProviderError + HTTP mapping
-  package.json
-  tsconfig.json
-  README.md
+packages/providers/src/
+  index.ts           public API
+  registry.ts        models.dev + SQLite
+  http.ts            shared fetch, timeouts, SSE
+  openai-compat.ts   chat + stream
+  anthropic.ts       Messages API
+  google.ts          Gemini API
+  errors.ts          ProviderError + body parsing
+  retry.ts           chatWithRetry
+  probe.ts           connection probe
 ```
