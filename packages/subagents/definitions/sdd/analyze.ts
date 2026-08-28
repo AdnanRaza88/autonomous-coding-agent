@@ -13,7 +13,6 @@ export type AnalyzeReport = {
 }
 
 const DECISION = /\bD\d+\b/g
-const REQUIREMENT = /\bR\d+\b/g
 
 export function analyzeDocuments(input: {
   constitution: string
@@ -22,7 +21,6 @@ export function analyzeDocuments(input: {
   tasks: string
 }): AnalyzeReport {
   const gaps: TraceGap[] = []
-  const specRefs = collect(input.spec, REQUIREMENT)
   const planDecisions = collect(input.plan, DECISION)
   const planText = input.plan
   const tasks = parseTasksMarkdown(input.tasks)
