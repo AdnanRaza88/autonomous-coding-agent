@@ -1,6 +1,8 @@
 import { ensureBuiltinsRegistered } from "./builtins.js"
+import { ensureSddRegistered } from "../definitions/sdd/run.js"
 
 ensureBuiltinsRegistered()
+ensureSddRegistered()
 
 export type { SubagentDefinition } from "./definitions.js"
 export {
@@ -28,3 +30,20 @@ export {
   formatNeedsSubtasks,
 } from "./spawn.js"
 export type { NeedsSubtasksSignal, SuggestedSubtask } from "./spawn.js"
+
+export {
+  runSddSubagent,
+  ensureSddRegistered,
+  getSddDefinition,
+  SDD_DEFINITION_ID,
+  extractSharedSpec,
+  extractOpenQuestions,
+  parseTasksMarkdown,
+  analyzeDocuments,
+} from "../definitions/sdd/index.js"
+export type {
+  SddResult,
+  RunSddOptions,
+  OpenQuestion,
+  AnalyzeReport,
+} from "../definitions/sdd/index.js"
