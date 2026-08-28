@@ -2,7 +2,7 @@
 
 Isolated subagent runner and definition registry for Agent Core.
 
-Each `runSubagent` call gets a fresh message history and a read-only copy of the current `SharedSpec` injected as system context. Concurrent calls never share mutable state. This package does not own the task DAG and does not invoke child agents; when a model asks for decomposition it only returns a `needs_subtasks` signal for the orchestrator.
+Each `runSubagent` call gets a fresh message history and a read-only copy of the current `SharedSpec` injected as system context. Concurrent calls never share mutable state.
 
 ## Install
 
@@ -17,18 +17,20 @@ npm install
 ```typescript
 import {
   runSubagent,
-  runSubagentDetailed,
   runBabySubagent,
-  runBabySubagentDetailed,
   registerSubagentDefinition,
   listSubagentDefinitions,
   getSubagentDefinition,
-  parseSpawnSignal,
-  BABY_MAX_CONTEXT_TOKENS,
+  parseNeedsSubtasks,
+  isNeedsSubtasks,
+  formatNeedsSubtasks,
+  BABY_CONTEXT_BUDGET,
+  estimateTokens,
+  fitToBabyBudget,
   type SubagentDefinition,
   type RunSubagentOptions,
-  type SubagentRun,
-  type SpawnRequest,
+  type NeedsSubtasksSignal,
+  type SuggestedSubtask,
 } from "@agent-core/subagents"
 import type { AgentTask, SharedSpec, ProviderConfig } from "@agent-core/types"
 ```
@@ -37,6 +39,7 @@ import type { AgentTask, SharedSpec, ProviderConfig } from "@agent-core/types"
 
 ```typescript
 const result = await runSubagent(task, spec, providerConfig)
+// result: { taskId, output, attempt, passed }
 ```
 
 Optional fourth argument:
@@ -49,23 +52,46 @@ await runSubagent(task, spec, providerConfig, {
 })
 ```
 
-- Builds an isolated `ChatMessage[]` every call (system = persona + SharedSpec + spawn hint, user = task).
+- Builds an isolated `ChatMessage[]` every call (system = persona + full SharedSpec, user = task).
 - Uses `getAdapter(providerConfig)` from `@agent-core/providers` unless `adapter` is supplied.
 - Does not verify the result; verification belongs to the orchestrator.
-- Does not recurse when the model requests subtasks.
-
-`runSubagentDetailed` returns the same result plus `spawn`, `tokensSent`, and `truncated`.
 
 ### `runBabySubagent`
 
-High-volume fan-out path. Same contract as `runSubagent`, but the outgoing prompt is fitted to a hard 100k-token budget before the provider is called. Spec fields and task instructions are truncated in a fixed order (style guide, then constraints, then goal, then instructions). The cap is enforced here; it is not left to the model.
+Small-context harness capped at 100k tokens (`BABY_CONTEXT_BUDGET`). Truncates and prioritizes the shared spec and task instructions before the call so the prompt never exceeds the budget. Reuses `runSubagent` internally.
 
 ```typescript
-const result = await runBabySubagent(task, hugeSpec, providerConfig, {
-  definitionId: "researcher",
-  adapter,
-})
+const result = await runBabySubagent(task, spec, providerConfig, options)
 ```
+
+- Budget is enforced in this package; the model is not trusted to stay under the limit.
+- Task id, status, dependsOn, and assignedModel are preserved under truncation.
+- Suitable for high-volume fan-out (dozens to hundreds of cheap concurrent calls).
+
+### Self-spawn signal
+
+A subagent may request further decomposition by emitting a structured signal in its output. This package never recursively calls `runSubagent`; it only surfaces the signal for the orchestrator (module 01) to re-plan that branch.
+
+```typescript
+type NeedsSubtasksSignal = {
+  type: "needs_subtasks"
+  reason: string
+  suggestedSubtasks: { title: string; instructions: string }[]
+}
+
+const signal = parseNeedsSubtasks(result.output)
+if (signal) {
+  // report to orchestrator; do not spawn here
+}
+```
+
+Helpers:
+
+- `parseNeedsSubtasks(output)` — returns the signal or `null`
+- `isNeedsSubtasks(output)` — boolean check
+- `formatNeedsSubtasks(signal)` — stable JSON serialization for tests and fixtures
+
+Accepted shapes: plain JSON, fenced ```json blocks, or JSON embedded in prose. The `type` field must be exactly `"needs_subtasks"`.
 
 ### Definitions
 
@@ -73,7 +99,7 @@ const result = await runBabySubagent(task, hugeSpec, providerConfig, {
 registerSubagentDefinition({
   id: "security-reviewer",
   name: "Security Reviewer",
-  systemPromptTemplate: "You review code for security issues.",
+  systemPromptTemplate: "You review code for security issues...",
   defaultModel: "llama-3.3-70b-versatile",
   maxContextTokens: 131072,
   tools: [],
@@ -85,23 +111,7 @@ const one = getSubagentDefinition("coder")
 
 Built-in definitions registered on first import: `planner`, `coder`, `reviewer`, `tester`, `researcher`.
 
-### Self-spawn signal
-
-If the model cannot finish the unit of work it may emit:
-
-```json
-{
-  "needs_subtasks": true,
-  "reason": "the change spans three packages",
-  "subtasks": [
-    { "title": "Update types", "instructions": "..." }
-  ]
-}
-```
-
-`parseSpawnSignal(output, taskId)` turns that into a `SpawnRequest`. The runner never calls itself with those proposed tasks. Module 01 re-plans the branch.
-
-On a spawn signal, `AgentResult.passed` is `false` so the orchestrator can distinguish a finished unit from a decomposition request. The raw model text stays in `output`.
+Custom definitions registered via `registerSubagentDefinition` are available to the UI and orchestrator without changing this package.
 
 ## Concurrent safety
 
@@ -112,12 +122,12 @@ Every invocation allocates its own message array and reads the definition regist
 ```
 packages/subagents/src/
   index.ts         public exports + builtin bootstrap
-  run.ts           runSubagent / runBabySubagent
-  budget.ts        token estimate and 100k fit
-  spawn.ts         needs_subtasks parser
+  run.ts           runSubagent, runBabySubagent
   messages.ts      pure message construction from task + spec
   definitions.ts   SubagentDefinition registry
   builtins.ts      planner / coder / reviewer / tester / researcher
+  budget.ts        100k context fit for baby harness
+  spawn.ts         needs_subtasks signal parse / format
 ```
 
 ## Test
@@ -131,3 +141,4 @@ npm test
 
 - Does not own the task DAG (graph-engine).
 - Does not talk to MCP servers (mcp-hooks-plugins).
+- Does not recursively spawn subagents; self-spawn is a signal only.

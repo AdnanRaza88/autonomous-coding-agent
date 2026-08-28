@@ -1,62 +1,78 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { parseSpawnSignal } from "./spawn.js"
+import {
+  formatNeedsSubtasks,
+  isNeedsSubtasks,
+  parseNeedsSubtasks,
+  type NeedsSubtasksSignal,
+} from "./spawn.js"
 
-describe("parseSpawnSignal", () => {
-  it("returns null for ordinary prose", () => {
-    assert.equal(parseSpawnSignal("Implemented the runner and tests.", "t1"), null)
+const stableSignal: NeedsSubtasksSignal = {
+  type: "needs_subtasks",
+  reason: "Task is too broad for a single pass",
+  suggestedSubtasks: [
+    { title: "Design API", instructions: "Define endpoints and schemas" },
+    { title: "Implement handlers", instructions: "Wire routes to services" },
+  ],
+}
+
+describe("parseNeedsSubtasks", () => {
+  it("parses a plain JSON signal", () => {
+    const raw = JSON.stringify(stableSignal)
+    const parsed = parseNeedsSubtasks(raw)
+    assert.deepEqual(parsed, stableSignal)
   })
 
-  it("reads a raw needs_subtasks object", () => {
-    const raw = JSON.stringify({
-      needs_subtasks: true,
-      reason: "too large",
-      subtasks: [
-        { title: "Part A", instructions: "Do A" },
-        { title: "Part B", instructions: "Do B" },
-      ],
-    })
-    const hit = parseSpawnSignal(raw, "parent-1")
-    assert.ok(hit)
-    assert.equal(hit.parentTaskId, "parent-1")
-    assert.equal(hit.reason, "too large")
-    assert.equal(hit.proposed.length, 2)
-    assert.equal(hit.proposed[0].title, "Part A")
+  it("parses fenced JSON", () => {
+    const raw = "```json\n" + JSON.stringify(stableSignal) + "\n```"
+    const parsed = parseNeedsSubtasks(raw)
+    assert.deepEqual(parsed, stableSignal)
   })
 
-  it("reads a fenced JSON block mixed with prose", () => {
-    const output = [
-      "This work needs to be split.",
-      "```json",
-      '{"needs_subtasks":true,"reason":"split","subtasks":[{"title":"One","instructions":"Do one"}]}',
-      "```",
-    ].join("\n")
-    const hit = parseSpawnSignal(output, "t-fence")
-    assert.ok(hit)
-    assert.equal(hit.proposed[0].title, "One")
+  it("parses JSON embedded in prose", () => {
+    const raw =
+      "I cannot finish this alone.\n" +
+      JSON.stringify(stableSignal) +
+      "\nPlease re-plan."
+    const parsed = parseNeedsSubtasks(raw)
+    assert.ok(parsed)
+    assert.equal(parsed.type, "needs_subtasks")
+    assert.equal(parsed.reason, stableSignal.reason)
+    assert.equal(parsed.suggestedSubtasks.length, 2)
   })
 
-  it("accepts camelCase needsSubtasks and proposed alias", () => {
-    const raw = JSON.stringify({
-      needsSubtasks: true,
-      message: "decompose",
-      proposed: [{ title: "X", description: "Do X" }],
-    })
-    const hit = parseSpawnSignal(raw, "t2")
-    assert.ok(hit)
-    assert.equal(hit.reason, "decompose")
-    assert.equal(hit.proposed[0].instructions, "Do X")
+  it("returns null for ordinary agent output", () => {
+    assert.equal(parseNeedsSubtasks("Implemented the feature successfully."), null)
+    assert.equal(parseNeedsSubtasks(""), null)
+    assert.equal(parseNeedsSubtasks("{ \"type\": \"done\" }"), null)
   })
 
-  it("ignores JSON that is not a spawn signal", () => {
-    const raw = JSON.stringify({ ok: true, files: ["a.ts"] })
-    assert.equal(parseSpawnSignal(raw, "t3"), null)
+  it("fills defaults for missing reason and empty suggested list", () => {
+    const parsed = parseNeedsSubtasks(
+      JSON.stringify({ type: "needs_subtasks", suggestedSubtasks: [] })
+    )
+    assert.ok(parsed)
+    assert.equal(parsed.type, "needs_subtasks")
+    assert.equal(parsed.reason, "further decomposition required")
+    assert.deepEqual(parsed.suggestedSubtasks, [])
   })
 
-  it("skips malformed fences and still finds a later object", () => {
-    const output = "```json\n{not json\n```\n{\"needs_subtasks\":true,\"reason\":\"ok\",\"subtasks\":[]}"
-    const hit = parseSpawnSignal(output, "t4")
-    assert.ok(hit)
-    assert.equal(hit.reason, "ok")
+  it("signal shape is stable across format and parse", () => {
+    const formatted = formatNeedsSubtasks(stableSignal)
+    const again = parseNeedsSubtasks(formatted)
+    assert.deepEqual(again, stableSignal)
+    assert.equal(again?.type, "needs_subtasks")
+    assert.ok(Array.isArray(again?.suggestedSubtasks))
+    for (const s of again?.suggestedSubtasks ?? []) {
+      assert.equal(typeof s.title, "string")
+      assert.equal(typeof s.instructions, "string")
+    }
+  })
+})
+
+describe("isNeedsSubtasks", () => {
+  it("is true only for valid signals", () => {
+    assert.equal(isNeedsSubtasks(JSON.stringify(stableSignal)), true)
+    assert.equal(isNeedsSubtasks("no signal here"), false)
   })
 })
