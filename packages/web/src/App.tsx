@@ -1,0 +1,216 @@
+import { useEffect, useMemo, useReducer, useState } from "react"
+import type { PermissionPrompt, SavedProvider, SlashCommandInfo, SubagentDraft } from "./api/contract"
+import { createHttpApi } from "./api/client"
+import { createMockApi, createMockBus } from "./api/mock"
+import { Layout } from "./ui/Layout"
+import { Composer } from "./ui/Composer"
+import { AgentTree } from "./ui/AgentTree"
+import { SubagentBuilder } from "./ui/SubagentBuilder"
+import { Settings } from "./ui/Settings"
+import { PermissionModal } from "./ui/PermissionModal"
+import { CommandPalette } from "./ui/CommandPalette"
+import { emptyRun, reduceRun, type RunView } from "./state/events"
+import { applyTheme, type ThemeMode } from "./theme/tokens"
+import { readStoredTheme, toggleTheme, writeStoredTheme } from "./theme/persist"
+import { parseComposer } from "./lib/filter"
+
+type Screen = "run" | "agents" | "settings"
+
+const useLiveBackend = import.meta.env.VITE_API_MODE === "live"
+
+export function App() {
+  const bus = useMemo(() => createMockBus(), [])
+  const api = useMemo(() => (useLiveBackend ? createHttpApi() : createMockApi(bus)), [bus])
+
+  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme(window.localStorage))
+  const [screen, setScreen] = useState<Screen>("run")
+  const [collapsed, setCollapsed] = useState(false)
+  const [run, setRun] = useReducer(reduceView, emptyRun())
+  const [providers, setProviders] = useState<{ id: string; name: string }[]>([])
+  const [models, setModels] = useState<{ id: string; name: string }[]>([])
+  const [providerId, setProviderId] = useState("groq")
+  const [model, setModel] = useState("")
+  const [saved, setSaved] = useState<SavedProvider[]>([])
+  const [agents, setAgents] = useState<SubagentDraft[]>([])
+  const [commands, setCommands] = useState<SlashCommandInfo[]>([])
+  const [servers, setServers] = useState<Awaited<ReturnType<typeof api.listMcpServers>>>([])
+  const [prompt, setPrompt] = useState<PermissionPrompt | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [draft, setDraft] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState("")
+
+  useEffect(() => {
+    applyTheme(theme)
+    writeStoredTheme(window.localStorage, theme)
+  }, [theme])
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const [plist, slist, clist, mlist] = await Promise.all([
+        api.listProviders(),
+        api.listSubagents(),
+        api.listCommands(),
+        api.listMcpServers(),
+      ])
+      if (!alive) return
+      setProviders(plist)
+      setAgents(slist)
+      setCommands(clist)
+      setServers(mlist)
+      const first = plist[0]?.id ?? "groq"
+      setProviderId(first)
+      const mods = await api.listProviderModels(first)
+      if (!alive) return
+      setModels(mods)
+      setModel(mods[0]?.id ?? "")
+      setSaved(await api.listSavedProviders())
+    })()
+    return () => {
+      alive = false
+    }
+  }, [api])
+
+  useEffect(() => {
+    return bus.subscribe((msg) => {
+      if (msg.channel === "orchestrator" && msg.runId === run.runId) {
+        setRun({ kind: "event", event: msg.event })
+      }
+      if (msg.channel === "permission") setPrompt(msg.prompt)
+    })
+  }, [bus, run.runId])
+
+  async function onProviderChange(id: string) {
+    setProviderId(id)
+    const mods = await api.listProviderModels(id)
+    setModels(mods)
+    setModel(mods[0]?.id ?? "")
+  }
+
+  async function submitGoal() {
+    const parsed = parseComposer(draft)
+    if (parsed.slash) {
+      setPaletteOpen(true)
+      return
+    }
+    const goal = draft.trim()
+    if (!goal) return
+    setBusy(true)
+    try {
+      const started = await api.startRun({ goal, providerId, model })
+      setRun({ kind: "start", runId: started.runId, goal })
+      setDraft("")
+      setScreen("run")
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runSlash(name: string, args: string[]) {
+    const result = await api.runCommand(name, args)
+    setNotice(result.output)
+    setPaletteOpen(false)
+  }
+
+  return (
+    <Layout
+      collapsed={collapsed}
+      onToggleCollapse={() => setCollapsed((v) => !v)}
+      screen={screen}
+      onScreen={setScreen}
+      theme={theme}
+      onToggleTheme={() => setTheme(toggleTheme(theme))}
+      notice={notice}
+    >
+      {screen === "run" ? (
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="min-h-0 flex-1 overflow-auto p-6">
+            <AgentTree view={run} />
+          </div>
+          <Composer
+            value={draft}
+            onChange={(next) => {
+              setDraft(next)
+              setPaletteOpen(next.startsWith("/"))
+            }}
+            providerId={providerId}
+            providers={providers}
+            onProvider={onProviderChange}
+            model={model}
+            models={models}
+            onModel={setModel}
+            busy={busy}
+            onSubmit={() => void submitGoal()}
+          />
+          {paletteOpen ? (
+            <CommandPalette
+              query={draft}
+              commands={commands}
+              onPick={(cmd) => {
+                const parsed = parseComposer(draft)
+                void runSlash(cmd.name, parsed.args)
+              }}
+              onClose={() => setPaletteOpen(false)}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {screen === "agents" ? (
+        <SubagentBuilder
+          items={agents}
+          onSave={async (item) => {
+            const savedItem = await api.upsertSubagent(item)
+            setAgents(await api.listSubagents())
+            setNotice(`saved ${savedItem.id}`)
+          }}
+          onDelete={async (id) => {
+            await api.deleteSubagent(id)
+            setAgents(await api.listSubagents())
+          }}
+        />
+      ) : null}
+
+      {screen === "settings" ? (
+        <Settings
+          providers={providers}
+          saved={saved}
+          servers={servers}
+          onSaveProvider={async (body) => {
+            const record = await api.saveProvider(body)
+            setSaved(await api.listSavedProviders())
+            setNotice(`provider ${record.id} stored`)
+          }}
+          onConnectServer={async (body) => {
+            await api.connectMcpServer(body)
+            setServers(await api.listMcpServers())
+          }}
+        />
+      ) : null}
+
+      {prompt ? (
+        <PermissionModal
+          prompt={prompt}
+          onDecide={async (decision) => {
+            await api.decidePermission(prompt.id, decision)
+            setPrompt(null)
+          }}
+        />
+      ) : null}
+    </Layout>
+  )
+}
+
+type ViewAction =
+  | { kind: "start"; runId: string; goal: string }
+  | { kind: "event"; event: import("@agent-core/types").OrchestratorEvent }
+
+function reduceView(view: RunView, action: ViewAction): RunView {
+  if (action.kind === "start") {
+    return { ...emptyRun(), runId: action.runId, goal: action.goal, phase: "planning", log: ["planning"] }
+  }
+  return reduceRun(view, action.event)
+}
