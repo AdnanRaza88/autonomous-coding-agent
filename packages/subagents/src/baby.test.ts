@@ -8,13 +8,9 @@ import type {
   SharedSpec,
 } from "@agent-core/types"
 import {
-  BABY_MAX_CONTEXT_TOKENS,
-  estimateMessageTokens,
-  parseSpawnSignal,
+  BABY_CONTEXT_BUDGET,
+  estimateTokens,
   runBabySubagent,
-  runBabySubagentDetailed,
-  runSubagent,
-  runSubagentDetailed,
 } from "./index.js"
 
 const baseConfig: ProviderConfig = {
@@ -25,113 +21,96 @@ const baseConfig: ProviderConfig = {
   contextWindow: 8192,
 }
 
-function makeAdapter(
-  onChat: (messages: ChatMessage[]) => void,
-  reply: string
-): ProviderAdapter {
-  return {
-    async chat(_config, messages) {
-      onChat(messages.map((m) => ({ role: m.role, content: m.content })))
-      return reply
-    },
-  }
+function bigText(chars: number, seed = "x"): string {
+  return seed.repeat(Math.ceil(chars / seed.length)).slice(0, chars)
 }
 
 describe("runBabySubagent", () => {
-  it("never sends more than 100k tokens even when spec and instructions are huge", async () => {
-    const spec: SharedSpec = {
-      goal: "G".repeat(500_000),
-      constraints: {
-        a: "A".repeat(400_000),
-        b: "B".repeat(400_000),
-      },
-      styleGuide: { s: "S".repeat(200_000) },
-      createdAt: "2026-08-28T00:00:00.000Z",
-    }
+  it("reuses runSubagent and returns AgentResult", async () => {
     const task: AgentTask = {
-      id: "huge",
-      title: "Fan out",
-      instructions: "I".repeat(1_200_000),
-      dependsOn: [],
-      status: "queued",
-    }
-
-    let sent: ChatMessage[] = []
-    const adapter = makeAdapter((msgs) => {
-      sent = msgs
-    }, "ok")
-
-    const result = await runBabySubagent(task, spec, baseConfig, { adapter })
-    assert.equal(result.taskId, "huge")
-    assert.equal(result.output, "ok")
-    assert.ok(sent.length >= 2)
-    assert.ok(estimateMessageTokens(sent) <= BABY_MAX_CONTEXT_TOKENS)
-  })
-
-  it("reports truncated + tokensSent on the detailed path", async () => {
-    const spec: SharedSpec = {
-      goal: "goal",
-      constraints: { k: "v".repeat(80_000) },
-      createdAt: "2026-08-28T00:00:00.000Z",
-    }
-    const task: AgentTask = {
-      id: "d1",
-      title: "detail",
-      instructions: "work".repeat(80_000),
-      dependsOn: [],
-      status: "queued",
-    }
-    const adapter = makeAdapter(() => {}, "done")
-    const run = await runBabySubagentDetailed(task, spec, baseConfig, { adapter })
-    assert.equal(run.passed, true)
-    assert.equal(run.spawn, null)
-    assert.ok(run.tokensSent <= BABY_MAX_CONTEXT_TOKENS)
-    assert.ok(run.truncated)
-  })
-})
-
-describe("self-spawn signaling", () => {
-  it("does not recursively invoke the adapter when needs_subtasks is returned", async () => {
-    let calls = 0
-    const payload = JSON.stringify({
-      needs_subtasks: true,
-      reason: "split across packages",
-      subtasks: [
-        { title: "Types", instructions: "Update shared types" },
-        { title: "Runner", instructions: "Wire the new signal" },
-      ],
-    })
-    const adapter: ProviderAdapter = {
-      async chat() {
-        calls += 1
-        return payload
-      },
-    }
-    const task: AgentTask = {
-      id: "parent",
-      title: "Too big",
-      instructions: "Implement the whole platform",
+      id: "baby-1",
+      title: "Small",
+      instructions: "Do little",
       dependsOn: [],
       status: "queued",
     }
     const spec: SharedSpec = {
-      goal: "platform",
+      goal: "Goal",
       constraints: {},
       createdAt: "2026-08-28T00:00:00.000Z",
     }
+    const adapter: ProviderAdapter = {
+      async chat() {
+        return "baby-done"
+      },
+    }
+    const result = await runBabySubagent(task, spec, baseConfig, { adapter })
+    assert.equal(result.taskId, "baby-1")
+    assert.equal(result.output, "baby-done")
+    assert.equal(result.attempt, 1)
+    assert.equal(result.passed, true)
+  })
 
-    const result = await runSubagent(task, spec, baseConfig, { adapter })
-    const detailed = await runSubagentDetailed(task, spec, baseConfig, { adapter })
+  it("never sends a prompt exceeding the 100k token budget", async () => {
+    let captured: ChatMessage[] = []
+    const adapter: ProviderAdapter = {
+      async chat(_config, messages) {
+        captured = messages.map((m) => ({ role: m.role, content: m.content }))
+        return "ok"
+      },
+    }
 
-    assert.equal(calls, 2)
-    assert.equal(result.taskId, "parent")
-    assert.equal(result.passed, false)
-    assert.equal(result.output, payload)
-    assert.ok(detailed.spawn)
-    assert.equal(detailed.spawn.parentTaskId, "parent")
-    assert.equal(detailed.spawn.proposed.length, 2)
-    const parsed = parseSpawnSignal(result.output, result.taskId)
-    assert.ok(parsed)
-    assert.equal(parsed.proposed[1].title, "Runner")
+    const task: AgentTask = {
+      id: "baby-huge",
+      title: bigText(40_000, "T"),
+      instructions: bigText(600_000, "I"),
+      dependsOn: [],
+      status: "queued",
+    }
+    const spec: SharedSpec = {
+      goal: bigText(250_000, "G"),
+      constraints: {
+        a: bigText(120_000, "A"),
+        b: bigText(120_000, "B"),
+      },
+      styleGuide: {
+        s: bigText(100_000, "S"),
+      },
+      createdAt: "2026-08-28T00:00:00.000Z",
+    }
+
+    await runBabySubagent(task, spec, baseConfig, { adapter })
+
+    assert.ok(captured.length >= 2)
+    const total = estimateTokens(captured.map((m) => m.content).join(""))
+    assert.ok(
+      total <= BABY_CONTEXT_BUDGET,
+      `sent ${total} tokens, budget is ${BABY_CONTEXT_BUDGET}`
+    )
+  })
+
+  it("preserves task id after budget fit", async () => {
+    const adapter: ProviderAdapter = {
+      async chat() {
+        return "x"
+      },
+    }
+    const result = await runBabySubagent(
+      {
+        id: "id-must-survive",
+        title: bigText(50_000),
+        instructions: bigText(300_000),
+        dependsOn: [],
+        status: "queued",
+      },
+      {
+        goal: bigText(200_000),
+        constraints: {},
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+      baseConfig,
+      { adapter }
+    )
+    assert.equal(result.taskId, "id-must-survive")
   })
 })

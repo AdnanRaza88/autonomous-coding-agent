@@ -9,25 +9,22 @@ export {
   getSubagentDefinition,
 } from "./definitions.js"
 
-export {
-  runSubagent,
-  runSubagentDetailed,
-  runBabySubagent,
-  runBabySubagentDetailed,
-} from "./run.js"
-export type { RunSubagentOptions, SubagentRun } from "./run.js"
+export { runSubagent, runBabySubagent } from "./run.js"
+export type { RunSubagentOptions } from "./run.js"
 
 export { buildMessages, buildSystemPrompt, formatSharedSpec } from "./messages.js"
 export { getBuiltinDefinitions } from "./builtins.js"
 
 export {
-  BABY_MAX_CONTEXT_TOKENS,
-  BABY_OUTPUT_RESERVE_TOKENS,
+  BABY_CONTEXT_BUDGET,
   estimateTokens,
-  estimateMessageTokens,
-  fitToTokenBudget,
+  fitToBabyBudget,
 } from "./budget.js"
 export type { BudgetFit } from "./budget.js"
 
-export { parseSpawnSignal, spawnSystemHint } from "./spawn.js"
-export type { SpawnRequest, ProposedSubtask } from "./spawn.js"
+export {
+  parseNeedsSubtasks,
+  isNeedsSubtasks,
+  formatNeedsSubtasks,
+} from "./spawn.js"
+export type { NeedsSubtasksSignal, SuggestedSubtask } from "./spawn.js"

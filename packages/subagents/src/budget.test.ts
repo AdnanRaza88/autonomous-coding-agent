@@ -2,86 +2,125 @@ import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import type { AgentTask, SharedSpec } from "@agent-core/types"
 import {
-  BABY_MAX_CONTEXT_TOKENS,
-  BABY_OUTPUT_RESERVE_TOKENS,
-  estimateMessageTokens,
+  BABY_CONTEXT_BUDGET,
   estimateTokens,
-  fitToTokenBudget,
+  fitToBabyBudget,
 } from "./budget.js"
+import { buildMessages } from "./messages.js"
 
-function huge(n: number, ch = "x"): string {
-  return ch.repeat(n)
+function bigText(chars: number, seed = "x"): string {
+  return seed.repeat(Math.ceil(chars / seed.length)).slice(0, chars)
 }
 
-const task: AgentTask = {
+const baseTask: AgentTask = {
   id: "t-budget",
-  title: "Compress me",
-  instructions: huge(800_000, "A"),
+  title: "Large task",
+  instructions: "Do the work",
   dependsOn: [],
   status: "queued",
 }
 
-const spec: SharedSpec = {
-  goal: huge(200_000, "G"),
-  constraints: {
-    language: huge(100_000, "L"),
-    style: huge(100_000, "S"),
-    extra: huge(100_000, "E"),
-  },
-  styleGuide: {
-    naming: huge(80_000, "N"),
-  },
+const baseSpec: SharedSpec = {
+  goal: "Ship something",
+  constraints: { language: "TypeScript" },
+  styleGuide: { naming: "camelCase" },
   createdAt: "2026-08-28T00:00:00.000Z",
 }
 
 describe("estimateTokens", () => {
-  it("is zero for empty text", () => {
+  it("is zero for empty input", () => {
     assert.equal(estimateTokens(""), 0)
   })
 
-  it("counts four characters as one token", () => {
+  it("ceil divides by four", () => {
     assert.equal(estimateTokens("abcd"), 1)
     assert.equal(estimateTokens("abcde"), 2)
   })
 })
 
-describe("fitToTokenBudget", () => {
-  it("leaves a small prompt untouched", () => {
-    const smallTask: AgentTask = {
-      id: "s",
-      title: "tiny",
-      instructions: "do it",
-      dependsOn: [],
-      status: "queued",
-    }
-    const smallSpec: SharedSpec = {
-      goal: "ship",
-      constraints: { lang: "ts" },
-      createdAt: "2026-08-28T00:00:00.000Z",
-    }
-    const fit = fitToTokenBudget(smallTask, smallSpec, undefined, 8_000)
-    assert.equal(fit.truncated, false)
-    assert.match(fit.messages[1].content, /do it/)
-    assert.match(fit.messages[0].content, /ship/)
+describe("fitToBabyBudget", () => {
+  it("leaves small payloads under budget unchanged in substance", () => {
+    const fitted = fitToBabyBudget(baseTask, baseSpec)
+    assert.equal(fitted.task.id, baseTask.id)
+    assert.equal(fitted.spec.goal, baseSpec.goal)
+    assert.ok(fitted.estimatedTokens <= BABY_CONTEXT_BUDGET)
   })
 
-  it("fits an oversized spec and task under the baby cap", () => {
-    const fit = fitToTokenBudget(
-      task,
-      spec,
-      undefined,
-      BABY_MAX_CONTEXT_TOKENS,
-      BABY_OUTPUT_RESERVE_TOKENS
+  it("never reports estimatedTokens above the budget", () => {
+    const hugeSpec: SharedSpec = {
+      goal: bigText(200_000),
+      constraints: {
+        a: bigText(80_000),
+        b: bigText(80_000),
+        c: bigText(80_000),
+      },
+      styleGuide: {
+        s1: bigText(50_000),
+        s2: bigText(50_000),
+      },
+      createdAt: baseSpec.createdAt,
+    }
+    const hugeTask: AgentTask = {
+      ...baseTask,
+      title: bigText(20_000),
+      instructions: bigText(400_000),
+    }
+
+    const fitted = fitToBabyBudget(hugeTask, hugeSpec, BABY_CONTEXT_BUDGET)
+    assert.ok(fitted.estimatedTokens <= BABY_CONTEXT_BUDGET)
+
+    const messages = buildMessages(fitted.task, fitted.spec)
+    const totalChars = messages.reduce((n, m) => n + m.content.length, 0)
+    const totalTokens = estimateTokens(messages.map((m) => m.content).join("\n"))
+    assert.ok(totalTokens <= BABY_CONTEXT_BUDGET)
+    assert.ok(totalChars / 4 <= BABY_CONTEXT_BUDGET + 500)
+  })
+
+  it("preserves task id and status under truncation", () => {
+    const hugeTask: AgentTask = {
+      id: "keep-me",
+      title: bigText(50_000),
+      instructions: bigText(300_000),
+      dependsOn: ["dep-a"],
+      status: "running",
+      assignedModel: "mock",
+    }
+    const fitted = fitToBabyBudget(hugeTask, {
+      goal: bigText(100_000),
+      constraints: {},
+      createdAt: baseSpec.createdAt,
+    })
+    assert.equal(fitted.task.id, "keep-me")
+    assert.equal(fitted.task.status, "running")
+    assert.equal(fitted.task.assignedModel, "mock")
+    assert.deepEqual(fitted.task.dependsOn, ["dep-a"])
+  })
+
+  it("built messages from fitted payload stay within 100k tokens", () => {
+    const fitted = fitToBabyBudget(
+      {
+        id: "edge",
+        title: bigText(30_000, "T"),
+        instructions: bigText(500_000, "I"),
+        dependsOn: [],
+        status: "queued",
+      },
+      {
+        goal: bigText(200_000, "G"),
+        constraints: {
+          c1: bigText(100_000, "C"),
+          c2: bigText(100_000, "D"),
+        },
+        styleGuide: { s: bigText(80_000, "S") },
+        createdAt: "2026-08-28T00:00:00.000Z",
+      }
     )
-    assert.equal(fit.truncated, true)
-    assert.ok(fit.tokens <= BABY_MAX_CONTEXT_TOKENS - BABY_OUTPUT_RESERVE_TOKENS)
-    assert.ok(estimateMessageTokens(fit.messages) <= BABY_MAX_CONTEXT_TOKENS)
-    assert.match(fit.messages[1].content, /Task id: t-budget/)
-  })
 
-  it("never exceeds a tight custom cap", () => {
-    const fit = fitToTokenBudget(task, spec, undefined, 2_000, 200)
-    assert.equal(fit.truncated, true)
-    assert.ok(estimateMessageTokens(fit.messages) <= 2_000)
+    const messages = buildMessages(fitted.task, fitted.spec)
+    const tokens = estimateTokens(messages.map((m) => m.content).join(""))
+    assert.ok(
+      tokens <= BABY_CONTEXT_BUDGET,
+      `tokens ${tokens} exceeded budget ${BABY_CONTEXT_BUDGET}`
+    )
   })
 })

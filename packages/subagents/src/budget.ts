@@ -1,207 +1,102 @@
-import type { AgentTask, ChatMessage, SharedSpec } from "@agent-core/types"
-import type { SubagentDefinition } from "./definitions.js"
-import { buildSystemPrompt } from "./messages.js"
+import type { AgentTask, SharedSpec } from "@agent-core/types"
 
-export const BABY_MAX_CONTEXT_TOKENS = 100_000
-export const BABY_OUTPUT_RESERVE_TOKENS = 2_048
+export const BABY_CONTEXT_BUDGET = 100_000
 
-const TRUNCATION_MARK = "\n\n[truncated to fit context budget]"
+const CHARS_PER_TOKEN = 4
+const RESERVE_FOR_PERSONA_AND_WRAPPER = 2_000
 
 export function estimateTokens(text: string): number {
   if (!text) return 0
-  return Math.ceil(text.length / 4)
+  return Math.ceil(text.length / CHARS_PER_TOKEN)
 }
 
-export function estimateMessageTokens(messages: ChatMessage[]): number {
-  let total = 0
-  for (const m of messages) {
-    total += 4
-    total += estimateTokens(m.role)
-    total += estimateTokens(m.content)
-  }
-  return total
-}
-
-function clip(text: string, maxTokens: number): string {
+function hardTruncate(text: string, maxTokens: number): string {
   if (maxTokens <= 0) return ""
-  const budget = maxTokens * 4
-  if (text.length <= budget) return text
-  const keep = Math.max(0, budget - TRUNCATION_MARK.length)
-  return text.slice(0, keep) + TRUNCATION_MARK
-}
-
-function compactConstraints(
-  constraints: Record<string, string>,
-  maxTokens: number
-): Record<string, string> {
-  const keys = Object.keys(constraints)
-  const out: Record<string, string> = {}
-  let used = 0
-  for (const key of keys) {
-    const raw = `${key}: ${constraints[key]}`
-    const cost = estimateTokens(raw) + 2
-    if (used + cost > maxTokens) {
-      const remain = maxTokens - used
-      if (remain > 8) {
-        out[key] = clip(constraints[key], remain - estimateTokens(key) - 2)
-      }
-      break
-    }
-    out[key] = constraints[key]
-    used += cost
-  }
-  return out
+  const maxChars = maxTokens * CHARS_PER_TOKEN
+  if (text.length <= maxChars) return text
+  if (maxChars <= 20) return text.slice(0, maxChars)
+  return text.slice(0, maxChars - 14) + "\n...[truncated]"
 }
 
 export type BudgetFit = {
   spec: SharedSpec
   task: AgentTask
-  messages: ChatMessage[]
-  tokens: number
-  truncated: boolean
+  estimatedTokens: number
 }
 
-export function fitToTokenBudget(
+export function fitToBabyBudget(
   task: AgentTask,
   spec: SharedSpec,
-  definition: SubagentDefinition | undefined,
-  maxTokens: number,
-  reserveTokens = BABY_OUTPUT_RESERVE_TOKENS
+  budget: number = BABY_CONTEXT_BUDGET
 ): BudgetFit {
-  const cap = Math.max(256, maxTokens - reserveTokens)
-  const originalMessages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(spec, definition) },
-    {
-      role: "user",
-      content: [`Task id: ${task.id}`, `Title: ${task.title}`, "", task.instructions].join("\n"),
-    },
-  ]
+  const usable = Math.max(budget - RESERVE_FOR_PERSONA_AND_WRAPPER, 1_000)
 
-  if (estimateMessageTokens(originalMessages) <= cap) {
-    return {
-      spec,
-      task,
-      messages: originalMessages,
-      tokens: estimateMessageTokens(originalMessages),
-      truncated: false,
-    }
+  const goalBudget = Math.floor(usable * 0.15)
+  const constraintsBudget = Math.floor(usable * 0.15)
+  const styleBudget = Math.floor(usable * 0.1)
+  const titleBudget = Math.floor(usable * 0.05)
+  const instructionsBudget =
+    usable - goalBudget - constraintsBudget - styleBudget - titleBudget
+
+  const goal = hardTruncate(spec.goal, goalBudget)
+
+  const constraintEntries = Object.entries(spec.constraints)
+  const constraints: Record<string, string> = {}
+  let constraintTokensUsed = 0
+  for (const [k, v] of constraintEntries) {
+    const piece = `${k}: ${v}`
+    const cost = estimateTokens(piece) + 2
+    if (constraintTokensUsed + cost > constraintsBudget) break
+    constraints[k] = v
+    constraintTokensUsed += cost
   }
 
-  const persona =
-    definition?.systemPromptTemplate ??
-    "You are a specialized coding subagent. Complete the assigned task fully and accurately. Follow the shared project spec without deviation."
+  let styleGuide: Record<string, string> | undefined
+  if (spec.styleGuide) {
+    styleGuide = {}
+    let styleTokensUsed = 0
+    for (const [k, v] of Object.entries(spec.styleGuide)) {
+      const piece = `${k}: ${v}`
+      const cost = estimateTokens(piece) + 2
+      if (styleTokensUsed + cost > styleBudget) break
+      styleGuide[k] = v
+      styleTokensUsed += cost
+    }
+    if (Object.keys(styleGuide).length === 0) styleGuide = undefined
+  }
 
-  let workingSpec: SharedSpec = {
-    goal: spec.goal,
-    constraints: { ...spec.constraints },
-    styleGuide: spec.styleGuide ? { ...spec.styleGuide } : undefined,
+  const title = hardTruncate(task.title, titleBudget)
+  const instructions = hardTruncate(task.instructions, instructionsBudget)
+
+  const fittedSpec: SharedSpec = {
+    goal,
+    constraints,
     createdAt: spec.createdAt,
   }
-
-  let instructions = task.instructions
-  let truncated = false
-
-  const build = (): ChatMessage[] => {
-    const system = `${persona}\n\n## Shared Project Spec\nGoal: ${workingSpec.goal}\nCreated: ${workingSpec.createdAt}${formatMap(
-      "Constraints",
-      workingSpec.constraints
-    )}${formatMap("Style guide", workingSpec.styleGuide)}`
-    const user = [`Task id: ${task.id}`, `Title: ${task.title}`, "", instructions].join("\n")
-    return [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ]
-  }
-
-  let messages = build()
-  if (estimateMessageTokens(messages) > cap && workingSpec.styleGuide) {
-    workingSpec = { ...workingSpec, styleGuide: undefined }
-    truncated = true
-    messages = build()
-  }
-
-  if (estimateMessageTokens(messages) > cap) {
-    const constraintBudget = Math.max(
-      32,
-      Math.floor(cap * 0.15) - estimateTokens(workingSpec.goal) - 20
-    )
-    workingSpec = {
-      ...workingSpec,
-      constraints: compactConstraints(workingSpec.constraints, constraintBudget),
-    }
-    truncated = true
-    messages = build()
-  }
-
-  if (estimateMessageTokens(messages) > cap) {
-    const goalBudget = Math.max(24, Math.floor(cap * 0.08))
-    if (estimateTokens(workingSpec.goal) > goalBudget) {
-      workingSpec = { ...workingSpec, goal: clip(workingSpec.goal, goalBudget) }
-      truncated = true
-      messages = build()
-    }
-  }
-
-  messages = build()
-  let used = estimateMessageTokens(messages)
-  if (used > cap) {
-    const overhead = used - estimateTokens(instructions)
-    const instructionBudget = Math.max(64, cap - overhead)
-    if (estimateTokens(instructions) > instructionBudget) {
-      instructions = clip(instructions, instructionBudget)
-      truncated = true
-      messages = build()
-      used = estimateMessageTokens(messages)
-    }
-  }
-
-  if (estimateMessageTokens(messages) > cap) {
-    const systemBudget = Math.max(80, Math.floor(cap * 0.45))
-    const userBudget = Math.max(80, cap - systemBudget)
-    messages = [
-      { role: "system", content: clip(messages[0].content, systemBudget) },
-      { role: "user", content: clip(messages[1].content, userBudget) },
-    ]
-    truncated = true
-  }
-
-  const tokens = estimateMessageTokens(messages)
-  if (tokens > cap) {
-    const hard = Math.max(32, cap - 8)
-    const joined = messages.map((m) => m.content).join("\n")
-    const clipped = clip(joined, hard)
-    messages = [
-      { role: "system", content: clipped.slice(0, Math.floor(clipped.length / 2)) },
-      { role: "user", content: clipped.slice(Math.floor(clipped.length / 2)) },
-    ]
-    truncated = true
-  }
+  if (styleGuide) fittedSpec.styleGuide = styleGuide
 
   const fittedTask: AgentTask = {
     id: task.id,
-    title: task.title,
+    title,
     instructions,
     dependsOn: [...task.dependsOn],
-    assignedModel: task.assignedModel,
     status: task.status,
   }
+  if (task.assignedModel !== undefined) {
+    fittedTask.assignedModel = task.assignedModel
+  }
+
+  const estimated =
+    estimateTokens(goal) +
+    estimateTokens(JSON.stringify(constraints)) +
+    estimateTokens(styleGuide ? JSON.stringify(styleGuide) : "") +
+    estimateTokens(title) +
+    estimateTokens(instructions) +
+    RESERVE_FOR_PERSONA_AND_WRAPPER
 
   return {
-    spec: workingSpec,
+    spec: fittedSpec,
     task: fittedTask,
-    messages,
-    tokens: estimateMessageTokens(messages),
-    truncated,
+    estimatedTokens: Math.min(estimated, budget),
   }
-}
-
-function formatMap(label: string, map?: Record<string, string>): string {
-  if (!map) return ""
-  const keys = Object.keys(map)
-  if (keys.length === 0) return ""
-  const lines = [`\n${label}:`]
-  for (const key of keys) {
-    lines.push(`- ${key}: ${map[key]}`)
-  }
-  return lines.join("\n")
 }
