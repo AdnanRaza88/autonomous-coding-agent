@@ -16,13 +16,13 @@ Layer rules:
 - A task includes: objective, expected output format, explicit boundaries, and what not to touch.
 
 SharedSpec block (required in plan.md, fenced as shared-spec):
-\`\`\`shared-spec
+```shared-spec
 {
   "goal": "...",
   "constraints": { "key": "value" },
   "styleGuide": { "key": "value" }
 }
-\`\`\`
+```
 
 Task format in tasks.md:
 - id: short slug (t1, t2, ...)
@@ -83,7 +83,7 @@ Output only the markdown document. Include:
 - Chosen libraries and why
 - Interface contracts
 - Decisions D1, D2, ... each citing the spec requirement it serves
-- A \`\`\`shared-spec fenced JSON object with goal, constraints, and styleGuide
+- A shared-spec fenced JSON object with goal, constraints, and styleGuide
 - Open questions if any remain`
 
 export const TASKS_USER = (goal: string, plan: string) =>
