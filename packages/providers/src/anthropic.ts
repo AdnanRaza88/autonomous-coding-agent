@@ -1,102 +1,89 @@
 import type { ChatMessage, ProviderAdapter, ProviderConfig } from "@agent-core/types"
-import { ProviderError, mapHttpError } from "./errors.js"
+import { ProviderError } from "./errors.js"
+import {
+  DEFAULT_TIMEOUT_MS,
+  assertOk,
+  parseJson,
+  providerFetch,
+  resolveMaxTokens,
+  type ChatRequestOptions,
+} from "./http.js"
 
-const DEFAULT_TIMEOUT_MS = 120_000
 const ANTHROPIC_VERSION = "2023-06-01"
+const ANTHROPIC_BETA =
+  "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
 
 export function createAnthropicAdapter(): ProviderAdapter {
   return {
     async chat(config: ProviderConfig, messages: ChatMessage[]): Promise<string> {
-      const base = config.baseUrl.replace(/\/$/, "")
-      const url = `${base}/v1/messages`
-      const systemParts: string[] = []
-      const apiMessages: { role: "user" | "assistant"; content: string }[] = []
-
-      for (const m of messages) {
-        if (m.role === "system") {
-          systemParts.push(m.content)
-          continue
-        }
-        if (m.role === "user" || m.role === "assistant") {
-          apiMessages.push({ role: m.role, content: m.content })
-        }
-      }
-
-      if (apiMessages.length === 0) {
-        throw new ProviderError("Anthropic requires at least one non-system message", {
-          code: "invalid_request",
-          providerId: config.id,
-          retryable: false,
-        })
-      }
-
-      const body: Record<string, unknown> = {
-        model: config.model,
-        max_tokens: Math.min(8192, Math.max(256, Math.floor(config.contextWindow / 4) || 4096)),
-        messages: apiMessages,
-      }
-      if (systemParts.length > 0) {
-        body.system = systemParts.join("\n\n")
-      }
-
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
-
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": config.apiKey,
-            "anthropic-version": ANTHROPIC_VERSION,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        })
-
-        const text = await res.text()
-        if (!res.ok) {
-          throw mapHttpError(res.status, text, config.id)
-        }
-
-        let data: unknown
-        try {
-          data = JSON.parse(text)
-        } catch (cause) {
-          throw new ProviderError("Anthropic returned non-JSON body", {
-            code: "unknown",
-            providerId: config.id,
-            cause,
-          })
-        }
-
-        const content = extractAnthropicText(data)
-        if (content === null) {
-          throw new ProviderError("Anthropic response missing text content", {
-            code: "unknown",
-            providerId: config.id,
-          })
-        }
-        return content
-      } catch (err) {
-        if (err instanceof ProviderError) throw err
-        if (err instanceof Error && err.name === "AbortError") {
-          throw new ProviderError(`Request timed out after ${DEFAULT_TIMEOUT_MS}ms`, {
-            code: "timeout",
-            providerId: config.id,
-            cause: err,
-          })
-        }
-        throw new ProviderError(err instanceof Error ? err.message : "Network error", {
-          code: "network",
-          providerId: config.id,
-          cause: err,
-        })
-      } finally {
-        clearTimeout(timer)
-      }
+      return anthropicMessages(config, messages, {})
     },
   }
+}
+
+export async function anthropicMessages(
+  config: ProviderConfig,
+  messages: ChatMessage[],
+  opts: ChatRequestOptions = {}
+): Promise<string> {
+  const base = config.baseUrl.replace(/\/$/, "")
+  const url = `${base}/v1/messages`
+  const systemParts: string[] = []
+  const apiMessages: { role: "user" | "assistant"; content: string }[] = []
+
+  for (const m of messages) {
+    if (m.role === "system") {
+      systemParts.push(m.content)
+      continue
+    }
+    if (m.role === "user" || m.role === "assistant") {
+      apiMessages.push({ role: m.role, content: m.content })
+    }
+  }
+
+  if (apiMessages.length === 0) {
+    throw new ProviderError("Anthropic requires at least one non-system message", {
+      code: "invalid_request",
+      providerId: config.id,
+      retryable: false,
+    })
+  }
+
+  const body: Record<string, unknown> = {
+    model: config.model,
+    max_tokens: resolveMaxTokens(config, 16384),
+    messages: apiMessages,
+  }
+  if (systemParts.length > 0) {
+    body.system = systemParts.join("\n\n")
+  }
+
+  const { status, text } = await providerFetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": config.apiKey,
+      "anthropic-version": ANTHROPIC_VERSION,
+      "anthropic-beta": ANTHROPIC_BETA,
+      ...(opts.headers ?? {}),
+    },
+    body: JSON.stringify(body),
+    providerId: config.id,
+    timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    signal: opts.signal,
+  })
+
+  assertOk(status, text, config.id)
+  const data = parseJson(text, config.id)
+  const content = extractAnthropicText(data)
+  if (content === null) {
+    throw new ProviderError("Anthropic response missing text content", {
+      code: "unknown",
+      providerId: config.id,
+      responseBody: text.slice(0, 2000),
+    })
+  }
+  return content
 }
 
 function extractAnthropicText(data: unknown): string | null {
@@ -105,9 +92,13 @@ function extractAnthropicText(data: unknown): string | null {
   if (!Array.isArray(content)) return null
   const parts: string[] = []
   for (const block of content) {
-    if (block && typeof block === "object" && (block as { type?: string }).type === "text") {
-      const t = (block as { text?: unknown }).text
-      if (typeof t === "string") parts.push(t)
+    if (!block || typeof block !== "object") continue
+    const type = (block as { type?: string }).type
+    if (type === "text" && typeof (block as { text?: unknown }).text === "string") {
+      parts.push((block as { text: string }).text)
+    }
+    if (type === "thinking" && typeof (block as { thinking?: unknown }).thinking === "string") {
+      parts.push((block as { thinking: string }).thinking)
     }
   }
   if (parts.length === 0) return null
