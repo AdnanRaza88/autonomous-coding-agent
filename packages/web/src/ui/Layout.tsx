@@ -1,0 +1,61 @@
+import type { ReactNode } from "react"
+import type { ThemeMode } from "../theme/tokens"
+
+type Screen = "run" | "agents" | "settings"
+
+export function Layout(props: {
+  collapsed: boolean
+  onToggleCollapse: () => void
+  screen: Screen
+  onScreen: (s: Screen) => void
+  theme: ThemeMode
+  onToggleTheme: () => void
+  notice: string
+  children: ReactNode
+}) {
+  const { collapsed, screen } = props
+  return (
+    <div className="flex min-h-screen bg-paper text-ink">
+      <aside
+        className={`glass sticky top-0 flex h-screen flex-col justify-between p-3 ${
+          collapsed ? "w-16" : "w-64"
+        }`}
+      >
+        <div className="solid rounded-md p-3">
+          <button className="text-left text-sm font-medium tracking-tight" onClick={props.onToggleCollapse}>
+            {collapsed ? "AC" : "Agent Core"}
+          </button>
+          {!collapsed ? (
+            <nav className="mt-6 flex flex-col gap-1 text-sm">
+              <NavBtn active={screen === "run"} onClick={() => props.onScreen("run")} label="Run" />
+              <NavBtn active={screen === "agents"} onClick={() => props.onScreen("agents")} label="Subagents" />
+              <NavBtn active={screen === "settings"} onClick={() => props.onScreen("settings")} label="Connections" />
+            </nav>
+          ) : null}
+        </div>
+        <div className="solid rounded-md p-3">
+          <button className="w-full text-left text-sm text-muted" onClick={props.onToggleTheme}>
+            {collapsed ? (props.theme === "dark" ? "Dk" : "Lt") : props.theme === "dark" ? "Dark" : "Light"}
+          </button>
+        </div>
+      </aside>
+      <main className="flex min-w-0 flex-1 flex-col">
+        {props.notice ? (
+          <div className="border-b border-line px-6 py-2 font-mono text-xs text-muted">{props.notice}</div>
+        ) : null}
+        <div className="min-h-0 flex-1">{props.children}</div>
+      </main>
+    </div>
+  )
+}
+
+function NavBtn(props: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      className={`rounded px-2 py-1.5 text-left ${props.active ? "bg-paper text-ink" : "text-muted"}`}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  )
+}
