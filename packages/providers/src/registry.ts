@@ -265,3 +265,20 @@ export function isNonOpenAICompatible(id: string, npm?: string): boolean {
   if (npm === "@ai-sdk/google-vertex") return true
   return false
 }
+
+export function listProviderModels(
+  providerId: string
+): { id: string; name: string; contextWindow: number; cost?: { input?: number; output?: number } }[] {
+  const provider = getRegistryProvider(providerId)
+  if (!provider) return []
+  return Object.values(provider.models).map((m) => ({
+    id: m.id,
+    name: m.name,
+    contextWindow: m.contextWindow,
+    cost: m.cost,
+  }))
+}
+
+export async function ensureRegistryReady(): Promise<void> {
+  await loadRegistry(false)
+}
