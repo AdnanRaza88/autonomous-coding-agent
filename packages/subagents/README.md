@@ -18,6 +18,7 @@ npm install
 import {
   runSubagent,
   runBabySubagent,
+  runSddSubagent,
   registerSubagentDefinition,
   listSubagentDefinitions,
   getSubagentDefinition,
@@ -39,7 +40,6 @@ import type { AgentTask, SharedSpec, ProviderConfig } from "@agent-core/types"
 
 ```typescript
 const result = await runSubagent(task, spec, providerConfig)
-// result: { taskId, output, attempt, passed }
 ```
 
 Optional fourth argument:
@@ -60,58 +60,31 @@ await runSubagent(task, spec, providerConfig, {
 
 Small-context harness capped at 100k tokens (`BABY_CONTEXT_BUDGET`). Truncates and prioritizes the shared spec and task instructions before the call so the prompt never exceeds the budget. Reuses `runSubagent` internally.
 
+### `runSddSubagent`
+
+Spec-driven development pipeline (module 08). Turns a one-line goal into constitution.md, spec.md, plan.md, tasks.md, and a `SharedSpec`. Stages are gated in that order. Ambiguous goals produce an Open questions list instead of a silent default. Implementation lives in `definitions/sdd`.
+
 ```typescript
-const result = await runBabySubagent(task, spec, providerConfig, options)
+const sdd = await runSddSubagent(userGoal, providerConfig)
+// sdd.sharedSpec is consumed by the orchestrator as-is
 ```
 
-- Budget is enforced in this package; the model is not trusted to stay under the limit.
-- Task id, status, dependsOn, and assignedModel are preserved under truncation.
-- Suitable for high-volume fan-out (dozens to hundreds of cheap concurrent calls).
+Also importable as `@agent-core/subagents/sdd`.
 
 ### Self-spawn signal
 
 A subagent may request further decomposition by emitting a structured signal in its output. This package never recursively calls `runSubagent`; it only surfaces the signal for the orchestrator (module 01) to re-plan that branch.
 
 ```typescript
-type NeedsSubtasksSignal = {
-  type: "needs_subtasks"
-  reason: string
-  suggestedSubtasks: { title: string; instructions: string }[]
-}
-
 const signal = parseNeedsSubtasks(result.output)
 if (signal) {
   // report to orchestrator; do not spawn here
 }
 ```
 
-Helpers:
-
-- `parseNeedsSubtasks(output)` — returns the signal or `null`
-- `isNeedsSubtasks(output)` — boolean check
-- `formatNeedsSubtasks(signal)` — stable JSON serialization for tests and fixtures
-
-Accepted shapes: plain JSON, fenced ```json blocks, or JSON embedded in prose. The `type` field must be exactly `"needs_subtasks"`.
-
 ### Definitions
 
-```typescript
-registerSubagentDefinition({
-  id: "security-reviewer",
-  name: "Security Reviewer",
-  systemPromptTemplate: "You review code for security issues...",
-  defaultModel: "llama-3.3-70b-versatile",
-  maxContextTokens: 131072,
-  tools: [],
-})
-
-const all = listSubagentDefinitions()
-const one = getSubagentDefinition("coder")
-```
-
-Built-in definitions registered on first import: `planner`, `coder`, `reviewer`, `tester`, `researcher`.
-
-Custom definitions registered via `registerSubagentDefinition` are available to the UI and orchestrator without changing this package.
+Built-in definitions registered on first import: `planner`, `coder`, `reviewer`, `tester`, `researcher`, `sdd`.
 
 ## Concurrent safety
 
@@ -120,14 +93,8 @@ Every invocation allocates its own message array and reads the definition regist
 ## Layout
 
 ```
-packages/subagents/src/
-  index.ts         public exports + builtin bootstrap
-  run.ts           runSubagent, runBabySubagent
-  messages.ts      pure message construction from task + spec
-  definitions.ts   SubagentDefinition registry
-  builtins.ts      planner / coder / reviewer / tester / researcher
-  budget.ts        100k context fit for baby harness
-  spawn.ts         needs_subtasks signal parse / format
+packages/subagents/src/                 runner, registry, budget, spawn
+packages/subagents/definitions/sdd/     SDD subagent (module 08)
 ```
 
 ## Test
