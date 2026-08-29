@@ -1,37 +1,36 @@
-import type { ChatMessage, ProviderAdapter, ProviderConfig, SharedSpec } from "@agent-core/types"
+import type { ProviderAdapter, ProviderConfig, SharedSpec } from "@agent-core/types"
 import { getAdapter } from "@agent-core/providers"
 import { registerSubagentDefinition } from "../../src/definitions.js"
 import { getSddDefinition } from "./definition.js"
 import {
-  ANALYZE_USER,
-  CONSTITUTION_USER,
-  PLAN_USER,
-  SPEC_USER,
-  SDD_SYSTEM,
-  TASKS_USER,
-} from "./prompts.js"
-import {
   extractOpenQuestions,
   extractSharedSpec,
   goalLooksAmbiguous,
-  unwrapFence,
-  type OpenQuestion,
 } from "./parse.js"
-import { analyzeDocuments, type AnalyzeReport } from "./analyze.js"
+import { analyzeDocuments } from "./analyze.js"
+import {
+  CONSTITUTION_USER,
+  SPEC_USER,
+  PLAN_USER,
+  TASKS_USER,
+  ANALYZE_USER,
+} from "./prompts.js"
+import type { AnalyzeReport } from "./analyze.js"
+import type { OpenQuestion } from "./parse.js"
+
+export type RunSddOptions = {
+  adapter?: ProviderAdapter
+  now?: () => Date
+}
 
 export type SddResult = {
   constitution: string
   spec: string
   plan: string
   tasks: string
-  sharedSpec: SharedSpec
   analysis: AnalyzeReport
   questions: OpenQuestion[]
-}
-
-export type RunSddOptions = {
-  adapter?: ProviderAdapter
-  now?: () => Date
+  sharedSpec: SharedSpec
 }
 
 let registered = false
@@ -53,7 +52,7 @@ export async function runSddSubagent(
   if (!goal) throw new Error("userGoal must be a non-empty string")
 
   const adapter = options?.adapter ?? getAdapter(providerConfig)
-  const createdAt = (options?.now ?? (() => new Date())).toISOString()
+  const createdAt = (options?.now ?? (() => new Date()))().toISOString()
 
   const constitution = await stage(adapter, providerConfig, CONSTITUTION_USER(goal))
   const specPrompt = goalLooksAmbiguous(goal)
@@ -70,47 +69,39 @@ export async function runSddSubagent(
     providerConfig,
     ANALYZE_USER(constitution, spec, plan, tasks)
   )
-  const analysis = analyzeDocuments({ constitution, spec, plan, tasks })
-  if (!analysis.ready && /verdict:\s*ready/i.test(analysisFromModel)) {
-    analysis.summary = `${analysis.summary}; model claimed ready`
-  }
+  void analysisFromModel
+
+  const analysis = analyzeDocuments({
+    constitution,
+    spec,
+    plan,
+    tasks,
+  })
+
+  const planQuestions = extractOpenQuestions(plan, "plan")
+  const questions = [...specQuestions, ...planQuestions]
 
   const sharedSpec = extractSharedSpec(plan, goal, createdAt)
-  if (!sharedSpec.constraints.constitution) {
-    sharedSpec.constraints.constitution = "see constitution.md"
-  }
-
-  const questions: OpenQuestion[] = [
-    ...specQuestions,
-    ...extractOpenQuestions(plan, "plan"),
-    ...analysis.openQuestions.filter(
-      (q) => !specQuestions.some((s) => s.text === q.text)
-    ),
-  ]
 
   return {
     constitution,
     spec,
     plan,
     tasks,
-    sharedSpec,
     analysis,
     questions,
+    sharedSpec,
   }
 }
 
 async function stage(
   adapter: ProviderAdapter,
   config: ProviderConfig,
-  user: string
+  userContent: string
 ): Promise<string> {
-  const messages: ChatMessage[] = [
-    { role: "system", content: SDD_SYSTEM },
-    { role: "user", content: user },
-  ]
-  const raw = await adapter.chat(config, messages)
-  if (typeof raw !== "string" || !raw.trim()) {
-    throw new Error("SDD stage returned empty output")
-  }
-  return unwrapFence(raw)
+  const out = await adapter.chat(config, [
+    { role: "system", content: "You produce only the requested markdown document. No preamble." },
+    { role: "user", content: userContent },
+  ])
+  return typeof out === "string" ? out : String(out)
 }
