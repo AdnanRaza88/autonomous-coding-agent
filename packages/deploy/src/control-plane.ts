@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { AgentResult, AgentTask, ProviderConfig } from "@agent-core/types"
-import { getProviderModels, listBuiltinProviders } from "@agent-core/providers"
+import { connectProvider, getProviderModels, listBuiltinProviders, ProviderError } from "@agent-core/providers"
 import { cancelRun, createRun, getRecord, getRunEvents, listRuns } from "@agent-core/graph-engine"
 import type { CreateRunOptions } from "@agent-core/graph-engine"
 import {
@@ -66,8 +66,16 @@ let seq = 0
 const pending = new Map<string, Pending>()
 const permissionWatchers = new Set<(prompt: Prompt) => void>()
 
+export type ProbeOutcome = {
+  ok: boolean
+  latencyMs: number
+  code?: string
+  message?: string
+}
+
 export type ControlPlaneOptions = {
   runOptions?: CreateRunOptions
+  probe?: (config: ProviderConfig) => Promise<ProbeOutcome>
 }
 
 export async function registerControlPlane(
@@ -121,6 +129,26 @@ export async function registerControlPlane(
       contextWindow,
       hasKey: Boolean(runtime.store.getSecretPlain(secretId)),
     }
+  })
+
+  app.post<{ Params: { id: string } }>("/api/providers/:id/probe", async (req, reply) => {
+    const id = req.params.id.trim()
+    const config = resolveProvider(runtime, id)
+    if (!config) {
+      reply.code(404)
+      return { ok: false, latencyMs: 0, code: "unknown_provider", message: `unknown provider ${id}` }
+    }
+    if (!config.apiKey && requiresKey(id)) {
+      return { ok: false, latencyMs: 0, code: "missing_key", message: "no stored key" }
+    }
+    const probe = options.probe ?? defaultProbe
+    const result = await probe(config)
+    runtime.audit.write({
+      action: "provider.probe",
+      allowed: result.ok,
+      detail: `${id}:${result.code ?? (result.ok ? "ok" : "fail")}`,
+    })
+    return result
   })
 
   app.get("/api/subagents", async () => mergeSubagents(runtime))
@@ -308,6 +336,10 @@ export async function registerControlPlane(
       if (!config) {
         reply.code(400)
         return { error: `unknown provider ${providerId}` }
+      }
+      if (!config.apiKey && requiresKey(providerId)) {
+        reply.code(400)
+        return { error: `no stored key for ${providerId}` }
       }
       const runId = await createRun(goal, config, options.runOptions)
       persistRun(runtime, runId, goal)
@@ -538,6 +570,22 @@ function cloneResult(result: AgentResult): AgentResult {
     output: result.output,
     attempt: result.attempt,
     passed: result.passed,
+  }
+}
+
+function requiresKey(providerId: string): boolean {
+  return providerId !== "ollama"
+}
+
+async function defaultProbe(config: ProviderConfig): Promise<ProbeOutcome> {
+  const result = await connectProvider(config)
+  if (result.ok) return { ok: true, latencyMs: result.latencyMs }
+  const err = result.error
+  return {
+    ok: false,
+    latencyMs: result.latencyMs,
+    code: err instanceof ProviderError ? err.code : "unknown",
+    message: err instanceof Error ? err.message : "probe failed",
   }
 }
 
