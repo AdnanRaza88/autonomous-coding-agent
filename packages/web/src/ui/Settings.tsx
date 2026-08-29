@@ -1,23 +1,37 @@
-import { useState } from "react"
-import type { McpServerDraft, PermissionRuleView, SaveProviderRequest, SavedProvider } from "../api/contract"
+import { useEffect, useState } from "react"
+import type {
+  McpServerDraft,
+  PermissionRuleView,
+  ProviderModel,
+  ProviderSummary,
+  SaveProviderRequest,
+  SavedProvider,
+} from "../api/contract"
+import { draftFromCatalog } from "../lib/onboarding"
 
 export function Settings(props: {
-  providers: { id: string; name: string }[]
+  providers: ProviderSummary[]
+  models: ProviderModel[]
   saved: SavedProvider[]
   servers: McpServerDraft[]
   rules: PermissionRuleView[]
+  selectedId: string
+  onSelectProvider: (id: string) => void
   onSaveProvider: (body: SaveProviderRequest) => Promise<void>
   onConnectServer: (body: McpServerDraft) => Promise<void>
   onRevokeRule: (id: string) => Promise<void>
   onClearSession: () => Promise<void>
 }) {
-  const [form, setForm] = useState<SaveProviderRequest>({
-    id: props.providers[0]?.id ?? "groq",
-    baseUrl: "",
-    apiKey: "",
-    model: "",
-    contextWindow: 128000,
-  })
+  const [form, setForm] = useState<SaveProviderRequest>(() =>
+    draftFromCatalog(props.providers, props.models, props.selectedId || props.providers[0]?.id || "groq"),
+  )
+
+  useEffect(() => {
+    setForm((prev) => {
+      const next = draftFromCatalog(props.providers, props.models, props.selectedId || prev.id)
+      return { ...next, apiKey: prev.id === next.id ? prev.apiKey : "" }
+    })
+  }, [props.selectedId, props.providers, props.models])
   const [server, setServer] = useState<McpServerDraft>({
     id: "",
     transport: "url",
@@ -41,7 +55,7 @@ export function Settings(props: {
           <select
             className="rounded border border-line bg-paper px-2 py-1.5 text-sm"
             value={form.id}
-            onChange={(e) => setForm({ ...form, id: e.target.value })}
+            onChange={(e) => props.onSelectProvider(e.target.value)}
           >
             {props.providers.map((p) => (
               <option key={p.id} value={p.id}>
