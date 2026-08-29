@@ -6,6 +6,7 @@ export const DEFAULT_DATA_DIR = "/data"
 export const KEY_FILE = ".master.key"
 export const STORE_FILE = "agent-core.db"
 export const AUDIT_FILE = "audit.log"
+export const GRANTS_FILE = "permissions.json"
 export const WORKSPACE_DIR = "workspace"
 
 export function resolveDataDir(override?: string): string {
@@ -19,6 +20,7 @@ export function dataLayout(dataDir: string) {
     keyPath: join(dataDir, KEY_FILE),
     storePath: join(dataDir, STORE_FILE),
     auditPath: join(dataDir, AUDIT_FILE),
+    grantsPath: join(dataDir, GRANTS_FILE),
     workspace: join(dataDir, WORKSPACE_DIR),
   }
 }
