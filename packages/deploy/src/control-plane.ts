@@ -23,9 +23,8 @@ import {
 import type { PermissionDecision, PermissionRequest } from "@agent-core/mcp-hooks-plugins"
 import { getSubagentDefinition, listSubagentDefinitions, registerSubagentDefinition } from "@agent-core/subagents"
 import type { Runtime } from "./bootstrap.js"
-import { rememberCompletedRun } from "./knowledge-plane.js"
+import { persistRun, usageFields } from "./persist-run.js"
 import { formatSse, parseEventCursor, SSE_HEADERS } from "./sse.js"
-import { getMemoryLayer } from "@agent-core/memory-knowledge"
 
 type Draft = {
   id: string
@@ -361,6 +360,7 @@ export async function registerControlPlane(
         goal: disk?.goal ?? mem?.goal ?? rec?.spec?.goal ?? "",
         status: rec?.status ?? mem?.status ?? disk?.status ?? "unknown",
         createdAt: disk?.createdAt ?? (mem ? new Date(mem.createdAt).toISOString() : new Date().toISOString()),
+        ...usageFields(rec ?? mem, disk),
       }
     })
     runs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -383,6 +383,7 @@ export async function registerControlPlane(
       results: rec.results.map(cloneResult),
       events: rec.events.slice(),
       error: rec.error,
+      ...usageFields(rec, stored),
     }
   })
 
@@ -440,21 +441,6 @@ export async function registerControlPlane(
       if (!reply.raw.writableEnded) reply.raw.end()
     }
   })
-}
-
-function persistRun(runtime: Runtime, runId: string, goalHint?: string): void {
-  const rec = getRecord(runId)
-  const prev = runtime.store.getRun(runId)
-  runtime.store.upsertRun({
-    id: runId,
-    goal: goalHint ?? prev?.goal ?? rec?.spec?.goal ?? "",
-    status: rec?.status ?? prev?.status ?? "planning",
-    createdAt: prev?.createdAt ?? new Date(rec?.createdAt ?? Date.now()).toISOString(),
-  })
-  const memory = getMemoryLayer()
-  if (memory && rec && (rec.status === "complete" || rec.status === "error" || rec.status === "cancelled")) {
-    void rememberCompletedRun(runtime, memory, runId)
-  }
 }
 
 function openSse(reply: FastifyReply): void {

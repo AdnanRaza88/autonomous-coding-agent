@@ -1,11 +1,12 @@
 import type { ChatMessage, ProviderAdapter, ProviderConfig } from "@agent-core/types"
-import { createAnthropicAdapter, anthropicMessages } from "./anthropic.js"
-import { createGoogleAdapter, googleGenerate } from "./google.js"
+import { createAnthropicAdapter, anthropicMessagesDetailed } from "./anthropic.js"
+import { createGoogleAdapter, googleGenerateDetailed } from "./google.js"
 import {
   createOpenAICompatibleAdapter,
-  chatCompletions,
+  chatCompletionsDetailed,
   streamCompletions,
 } from "./openai-compat.js"
+import type { ChatTurn } from "./usage.js"
 import {
   getRegistryProvider,
   isNonOpenAICompatible,
@@ -24,6 +25,8 @@ export type { ProviderErrorCode } from "./errors.js"
 export type { ProbeResult }
 export type { ChatRequestOptions }
 export type { RegistryProvider } from "./registry.js"
+export { estimateMessageUsage, estimateUsd, mergeUsage, parseUsage, emptyUsage } from "./usage.js"
+export type { ChatTurn } from "./usage.js"
 
 const openaiAdapter = createOpenAICompatibleAdapter()
 const anthropicAdapter = createAnthropicAdapter()
@@ -98,11 +101,19 @@ export async function chat(
   messages: ChatMessage[],
   opts?: ChatRequestOptions
 ): Promise<string> {
+  return (await chatDetailed(config, messages, opts)).text
+}
+
+export async function chatDetailed(
+  config: ProviderConfig,
+  messages: ChatMessage[],
+  opts?: ChatRequestOptions
+): Promise<ChatTurn> {
   ensureWarm()
   const kind = selectKind(config)
-  if (kind === "anthropic") return anthropicMessages(config, messages, opts)
-  if (kind === "google") return googleGenerate(config, messages, opts)
-  return chatCompletions(config, messages, opts)
+  if (kind === "anthropic") return anthropicMessagesDetailed(config, messages, opts)
+  if (kind === "google") return googleGenerateDetailed(config, messages, opts)
+  return chatCompletionsDetailed(config, messages, opts)
 }
 
 export async function* streamChat(

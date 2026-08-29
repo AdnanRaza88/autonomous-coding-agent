@@ -8,6 +8,7 @@ import {
   resolveMaxTokens,
   type ChatRequestOptions,
 } from "./http.js"
+import { estimateMessageUsage, parseUsage, type ChatTurn } from "./usage.js"
 
 const ANTHROPIC_VERSION = "2023-06-01"
 const ANTHROPIC_BETA =
@@ -26,6 +27,14 @@ export async function anthropicMessages(
   messages: ChatMessage[],
   opts: ChatRequestOptions = {}
 ): Promise<string> {
+  return (await anthropicMessagesDetailed(config, messages, opts)).text
+}
+
+export async function anthropicMessagesDetailed(
+  config: ProviderConfig,
+  messages: ChatMessage[],
+  opts: ChatRequestOptions = {}
+): Promise<ChatTurn> {
   const base = config.baseUrl.replace(/\/$/, "")
   const url = `${base}/v1/messages`
   const systemParts: string[] = []
@@ -83,7 +92,12 @@ export async function anthropicMessages(
       responseBody: text.slice(0, 2000),
     })
   }
-  return content
+  const parsed = parseUsage(data)
+  return {
+    text: content,
+    usage: parsed ?? estimateMessageUsage(messages, content),
+    estimated: !parsed,
+  }
 }
 
 function extractAnthropicText(data: unknown): string | null {

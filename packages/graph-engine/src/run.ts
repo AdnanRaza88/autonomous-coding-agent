@@ -1,5 +1,6 @@
 import type { AgentResult, AgentTask, OrchestratorEvent, ProviderConfig, SharedSpec } from "@agent-core/types"
 import {
+  addUsage,
   createRecord,
   getRecord,
   isTerminal,
@@ -11,6 +12,7 @@ import {
   setTasks,
   waitForEvent,
 } from "./blackboard.js"
+import { estimateMessageUsage } from "@agent-core/providers"
 import type { CreateRunOptions } from "./deps.js"
 import { resolveChat } from "./deps.js"
 import { executeRun, finishCancel } from "./executor.js"
@@ -34,7 +36,7 @@ export async function createRun(
   createRecord(runId)
   pushEvent(runId, { type: "planning" })
 
-  const chat = resolveChat(providerConfig, options)
+  const chat = meterChat(runId, resolveChat(providerConfig, options))
 
   try {
     const spec = freezeSpec(await generateSpec(goal, providerConfig, chat))
@@ -98,6 +100,7 @@ export function getRunState(runId: string): {
   tasks: AgentTask[]
   results: AgentResult[]
   status: string
+  usage: { inputTokens: number; outputTokens: number; calls: number }
 } {
   const rec = requireRecord(runId)
   return {
@@ -110,15 +113,23 @@ export function getRunState(runId: string): {
       passed: r.passed,
     })),
     status: rec.status,
+    usage: { ...rec.usage },
   }
 }
 
-export function listRuns(): Array<{ id: string; status: string; createdAt: number; goal?: string }> {
+export function listRuns(): Array<{
+  id: string
+  status: string
+  createdAt: number
+  goal?: string
+  usage?: { inputTokens: number; outputTokens: number; calls: number }
+}> {
   return listRecords().map((rec) => ({
     id: rec.id,
     status: rec.status,
     createdAt: rec.createdAt,
     goal: rec.spec?.goal,
+    usage: { ...rec.usage },
   }))
 }
 
@@ -129,6 +140,17 @@ export async function waitForRun(runId: string): Promise<void> {
   if (!rec) return
   while (!isTerminal(rec.status)) {
     await waitForEvent(runId)
+  }
+}
+
+function meterChat(
+  runId: string,
+  chat: (config: ProviderConfig, messages: import("@agent-core/types").ChatMessage[]) => Promise<string>,
+): (config: ProviderConfig, messages: import("@agent-core/types").ChatMessage[]) => Promise<string> {
+  return async (config, messages) => {
+    const text = await chat(config, messages)
+    addUsage(runId, estimateMessageUsage(messages, text))
+    return text
   }
 }
 

@@ -21,6 +21,12 @@ export interface AgentResult {
   passed: boolean
 }
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  calls: number
+}
+
 export interface ProviderConfig {
   id: string
   baseUrl: string
