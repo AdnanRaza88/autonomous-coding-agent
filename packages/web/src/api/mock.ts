@@ -3,6 +3,9 @@ import { topologicalBatches } from "../lib/dag.js"
 import { redactProvider } from "./contract.js"
 import type {
   AgentCoreApi,
+  DeployBindingView,
+  DeployTargetView,
+  GraphFactView,
   McpServerDraft,
   PermissionPrompt,
   PermissionRuleView,
@@ -15,6 +18,7 @@ import type {
   SlashCommandInfo,
   StartRunRequest,
   SubagentDraft,
+  VaultNoteView,
   WsInbound,
 } from "./contract.js"
 
@@ -51,7 +55,7 @@ const modelsByProvider: Record<string, ProviderModel[]> = {
   openai: [{ id: "gpt-4.1", name: "GPT-4.1", contextWindow: 1048576 }],
   openrouter: [{ id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", contextWindow: 200000 }],
   ollama: [{ id: "qwen2.5-coder:7b", name: "Qwen2.5 Coder 7B", contextWindow: 32768 }],
-}
+]
 
 const defaultCommands: SlashCommandInfo[] = [
   { name: "help", description: "List slash commands", risk: "low" },
@@ -90,7 +94,30 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
   const aborted = new Set<string>()
   const prompts = new Map<string, PermissionPrompt>()
   const rules = new Map<string, PermissionRuleView>()
+  const facts = new Map<string, GraphFactView>()
+  const notes = new Map<string, VaultNoteView>([
+    [
+      "home",
+      {
+        id: "home",
+        title: "Home",
+        path: "Home.md",
+        kind: "index",
+        links: [],
+        body: "Workspace vault index.",
+        properties: { kind: "index" },
+        mtimeMs: Date.now(),
+      },
+    ],
+  ])
+  const targets: DeployTargetView[] = [
+    { id: "vercel", kind: "static" },
+    { id: "fly", kind: "container" },
+  ]
+  const creds = new Set<string>()
+  const bindings = new Map<string, DeployBindingView>()
   let seq = 0
+  let factSeq = 0
 
   return {
     async listProviders() {
@@ -230,6 +257,115 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       for (const [id, rule] of rules) {
         if (rule.persist === "session") rules.delete(id)
       }
+    },
+    async memoryHealth() {
+      return { automem: "ok", graphiti: "ok" }
+    },
+    async memoryContext(query) {
+      const q = query.toLowerCase()
+      const matched = [...facts.values()].filter((f) => f.text.toLowerCase().includes(q))
+      return {
+        relevantMemories: matched.map((f) => f.text),
+        relevantKnowledgeGraphFacts: matched.map((f) => f.text),
+      }
+    },
+    async listFacts(query) {
+      const q = (query ?? "").toLowerCase()
+      return [...facts.values()].filter((f) => !q || f.text.toLowerCase().includes(q))
+    },
+    async addFact(body) {
+      const id = `fact_${++factSeq}`
+      const fact: GraphFactView = {
+        id,
+        text: body.statement,
+        kind: "edit",
+        source: body.note,
+        createdAt: new Date().toISOString(),
+      }
+      if (body.replaces) facts.delete(body.replaces)
+      facts.set(id, fact)
+      return fact
+    },
+    async listVaultNotes() {
+      return [...notes.values()].map(({ body: _body, properties: _p, ...rest }) => rest)
+    },
+    async readVaultNote(id) {
+      const note = notes.get(id)
+      if (!note) throw new Error(`unknown note ${id}`)
+      return { ...note }
+    },
+    async writeVaultNote(body) {
+      const id = (body.id ?? body.title).trim()
+      const note: VaultNoteView = {
+        id,
+        title: body.title,
+        path: `${body.title}.md`,
+        kind: body.properties?.kind ?? "entity",
+        links: body.links ?? [],
+        body: body.body,
+        properties: body.properties ?? {},
+        mtimeMs: Date.now(),
+      }
+      notes.set(id, note)
+      return note
+    },
+    async vaultGraph() {
+      const nodes = [...notes.values()].map((n) => ({ id: n.id, title: n.title, kind: n.kind, path: n.path }))
+      const edges = [...notes.values()].flatMap((n) =>
+        n.links.map((to) => ({
+          from: n.id,
+          to: to.toLowerCase(),
+        })),
+      )
+      return { nodes, edges }
+    },
+    async vaultBacklinks(id) {
+      const key = id.toLowerCase()
+      return [...notes.values()]
+        .filter((n) => n.links.some((l) => l.toLowerCase() === key || l.toLowerCase() === notes.get(id)?.title.toLowerCase()))
+        .map((n) => ({ id: n.id, title: n.title }))
+    },
+    async listDeployTargets() {
+      return targets
+    },
+    async listDeployBindings() {
+      return [...bindings.values()]
+    },
+    async detectDeploy(runId) {
+      const snap = runs.get(runId)
+      if (!snap) throw new Error("runId is required and must exist")
+      const goal = (snap.goal ?? "").toLowerCase()
+      const kind = /docker|container|fly/.test(goal) ? "container" : "static"
+      bindings.set(runId, {
+        runId,
+        projectDir: "/workspace",
+        targetId: kind === "static" ? "vercel" : "fly",
+      })
+      return {
+        kind,
+        framework: kind === "static" ? "static" : undefined,
+        reasons: [kind === "static" ? "no Dockerfile" : "container hint in goal"],
+      }
+    },
+    async saveDeployCredentials(body) {
+      if (!body.token) throw new Error("targetId and token are required")
+      creds.add(body.targetId)
+      return { targetId: body.targetId, hasToken: true }
+    },
+    async deployRun(body) {
+      const snap = runs.get(body.runId)
+      if (!snap) throw new Error("runId is required and must exist")
+      const targetId = body.targetId ?? "vercel"
+      if (body.token) creds.add(targetId)
+      if (!creds.has(targetId)) throw new Error("missing credentials")
+      const url = `https://${body.runId}.${targetId === "fly" ? "fly.dev" : "vercel.app"}`
+      bindings.set(body.runId, {
+        runId: body.runId,
+        projectDir: "/workspace",
+        targetId,
+        lastUrl: url,
+      })
+      return { runId: body.runId, url, status: "live", targetId }
     },
   }
 }

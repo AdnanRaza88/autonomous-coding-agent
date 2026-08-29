@@ -90,3 +90,43 @@ test("session grants clear while always grants stay until revoke", async () => {
   await api.removePermissionRule(leftover[0]!.id)
   assert.equal((await api.listPermissionRules()).length, 0)
 })
+
+test("memory facts recall and vault notes form a graph", async () => {
+  const api = createMockApi(createMockBus())
+  const health = await api.memoryHealth()
+  assert.equal(health.automem, "ok")
+  const saved = await api.addFact({ statement: "Prefer Groq for cheap inference." })
+  assert.ok(saved.id)
+  const listed = await api.listFacts("Groq")
+  assert.equal(listed.length, 1)
+  const ctx = await api.memoryContext("Groq")
+  assert.ok(ctx.relevantMemories.some((m) => m.includes("Groq")))
+  const home = await api.readVaultNote("home")
+  assert.equal(home.title, "Home")
+  await api.writeVaultNote({
+    id: "stack",
+    title: "Stack",
+    body: "See [[Home]].",
+    links: ["Home"],
+  })
+  const graph = await api.vaultGraph()
+  assert.ok(graph.nodes.some((n) => n.id === "stack"))
+  assert.ok(graph.edges.some((e) => e.from === "stack"))
+})
+
+test("deploy detect and ship hide the token", async () => {
+  const api = createMockApi(createMockBus())
+  const started = await api.startRun({
+    goal: "ship a static landing page",
+    providerId: "groq",
+    model: "llama-3.3-70b-versatile",
+  })
+  const detected = await api.detectDeploy(started.runId)
+  assert.equal(detected.kind, "static")
+  const creds = await api.saveDeployCredentials({ targetId: "vercel", token: "tok_secret" })
+  assert.equal(creds.hasToken, true)
+  assert.equal(JSON.stringify(creds).includes("tok_secret"), false)
+  const live = await api.deployRun({ runId: started.runId, targetId: "vercel" })
+  assert.equal(live.status, "live")
+  assert.ok(live.url.includes("vercel.app"))
+})
