@@ -1,0 +1,21 @@
+{
+  "name": "@agent-core/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test graph.test.ts providers.test.ts subagents.test.ts mcp.test.ts docker.test.ts"
+  },
+  "dependencies": {
+    "@agent-core/graph-engine": "*",
+    "@agent-core/mcp-hooks-plugins": "*",
+    "@agent-core/providers": "*",
+    "@agent-core/subagents": "*",
+    "@agent-core/types": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.23.12",
+    "typescript": "^5.8.2"
+  }
+}
