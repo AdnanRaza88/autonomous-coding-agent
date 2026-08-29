@@ -63,9 +63,25 @@ export function foldEvent(prev: StatusSnapshot, event: OrchestratorEvent, tasks:
     }
     case "error":
       return { ...prev, phase: "error", label: event.message }
+    case "usage":
+      return {
+        ...prev,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        calls: event.calls,
+        label: withUsage(prev.label, event.inputTokens, event.outputTokens),
+      }
     default:
       return prev
   }
+}
+
+function withUsage(label: string, input: number, output: number): string {
+  const total = input + output
+  if (total <= 0) return label
+  const compact = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total)
+  if (label.includes("tok")) return label.replace(/\d+(\.\d+)?k? tok/, `${compact} tok`)
+  return `${label} · ${compact} tok`
 }
 
 function applyTaskStatus(tasks: AgentTask[], id: string, status: AgentTask["status"]): AgentTask[] {

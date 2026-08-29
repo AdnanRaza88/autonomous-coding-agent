@@ -48,4 +48,6 @@ test("end to end run batches independent work and retries a forced fail", async 
   assert.ok(types.includes("plan_ready"))
   assert.ok(types.includes("agent_verify"))
   assert.ok(types.includes("run_complete"))
+  assert.ok(types.includes("usage"))
+  assert.ok(state.usage.calls >= 2)
 })

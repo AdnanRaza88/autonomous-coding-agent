@@ -10,6 +10,9 @@ export interface RunView {
   log: string[]
   error?: string
   cursor: number
+  inputTokens: number
+  outputTokens: number
+  calls: number
 }
 
 export const emptyRun = (): RunView => ({
@@ -20,6 +23,9 @@ export const emptyRun = (): RunView => ({
   results: [],
   log: [],
   cursor: -1,
+  inputTokens: 0,
+  outputTokens: 0,
+  calls: 0,
 })
 
 export function reduceRun(view: RunView, event: OrchestratorEvent): RunView {
@@ -72,6 +78,15 @@ export function reduceRun(view: RunView, event: OrchestratorEvent): RunView {
       log: [...view.log, `cancelled ${event.reason}`],
     }
   }
+  if (event.type === "usage") {
+    return {
+      ...next,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      calls: event.calls,
+      log: [...view.log, `usage ${event.inputTokens}+${event.outputTokens} tok / ${event.calls}`],
+    }
+  }
   return {
     ...next,
     phase: "error",
@@ -93,7 +108,13 @@ export function hydrateRun(snapshot: RunSnapshot & { goal?: string }): RunView {
   else if (snapshot.error) view = { ...view, phase: "error", error: snapshot.error }
   else if (snapshot.status === "complete") view = { ...view, phase: "complete" }
   else if (snapshot.status === "planning" && view.phase === "idle") view = { ...view, phase: "planning" }
-  view = { ...view, cursor: snapshot.events.length - 1 }
+  view = {
+    ...view,
+    cursor: snapshot.events.length - 1,
+    inputTokens: snapshot.inputTokens ?? view.inputTokens,
+    outputTokens: snapshot.outputTokens ?? view.outputTokens,
+    calls: snapshot.calls ?? view.calls,
+  }
   return view
 }
 
