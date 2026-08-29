@@ -3,7 +3,7 @@ import type { RunSummary } from "../api/contract"
 import type { ThemeMode } from "../theme/tokens"
 import { RunHistory } from "./RunHistory"
 
-type Screen = "run" | "agents" | "settings"
+export type Screen = "run" | "agents" | "knowledge" | "deploy" | "settings"
 
 export function Layout(props: {
   collapsed: boolean
@@ -35,6 +35,8 @@ export function Layout(props: {
               <nav className="mt-6 flex flex-col gap-1 text-sm">
                 <NavBtn active={screen === "run"} onClick={() => props.onScreen("run")} label="Run" />
                 <NavBtn active={screen === "agents"} onClick={() => props.onScreen("agents")} label="Subagents" />
+                <NavBtn active={screen === "knowledge"} onClick={() => props.onScreen("knowledge")} label="Knowledge" />
+                <NavBtn active={screen === "deploy"} onClick={() => props.onScreen("deploy")} label="Deploy" />
                 <NavBtn active={screen === "settings"} onClick={() => props.onScreen("settings")} label="Connections" />
               </nav>
               <div className="mt-6 min-h-0 flex-1 overflow-auto">

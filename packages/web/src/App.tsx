@@ -1,28 +1,36 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type {
+  DeployBindingView,
+  DeployResultView,
+  DeployTargetView,
+  DetectedProjectView,
+  GraphFactView,
+  MemoryHealth,
   PermissionPrompt,
   PermissionRuleView,
   RunSummary,
   SavedProvider,
   SlashCommandInfo,
   SubagentDraft,
+  VaultGraphView,
+  VaultNoteSummary,
 } from "./api/contract"
 import { createHttpApi } from "./api/client"
 import { createMockApi, createMockBus } from "./api/mock"
 import { watchPermissions, watchRunEvents } from "./api/stream"
-import { Layout } from "./ui/Layout"
+import { Layout, type Screen } from "./ui/Layout"
 import { Composer } from "./ui/Composer"
 import { AgentTree } from "./ui/AgentTree"
 import { SubagentBuilder } from "./ui/SubagentBuilder"
 import { Settings } from "./ui/Settings"
 import { PermissionModal } from "./ui/PermissionModal"
 import { CommandPalette } from "./ui/CommandPalette"
+import { Knowledge } from "./ui/Knowledge"
+import { DeployPanel } from "./ui/DeployPanel"
 import { emptyRun, hydrateRun, reduceRun, type RunView } from "./state/events"
 import { applyTheme, type ThemeMode } from "./theme/tokens"
 import { readStoredTheme, toggleTheme, writeStoredTheme } from "./theme/persist"
 import { parseComposer } from "./lib/filter"
-
-type Screen = "run" | "agents" | "settings"
 
 const useLiveBackend = import.meta.env.VITE_API_MODE !== "mock"
 const LAST_RUN_KEY = "agent-core.last-run"
@@ -51,6 +59,14 @@ export function App() {
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState("")
+  const [health, setHealth] = useState<MemoryHealth | null>(null)
+  const [facts, setFacts] = useState<GraphFactView[]>([])
+  const [notes, setNotes] = useState<VaultNoteSummary[]>([])
+  const [graph, setGraph] = useState<VaultGraphView | null>(null)
+  const [targets, setTargets] = useState<DeployTargetView[]>([])
+  const [bindings, setBindings] = useState<DeployBindingView[]>([])
+  const [detected, setDetected] = useState<DetectedProjectView | null>(null)
+  const [lastDeploy, setLastDeploy] = useState<DeployResultView | null>(null)
 
   cursorRef.current = run.cursor
 
@@ -95,6 +111,21 @@ export function App() {
           window.sessionStorage.removeItem(LAST_RUN_KEY)
         }
       }
+      const [mem, listedFacts, listedNotes, listedGraph, listedTargets, listedBindings] = await Promise.all([
+        api.memoryHealth().catch(() => null),
+        api.listFacts().catch(() => [] as GraphFactView[]),
+        api.listVaultNotes().catch(() => [] as VaultNoteSummary[]),
+        api.vaultGraph().catch(() => null),
+        api.listDeployTargets().catch(() => [] as DeployTargetView[]),
+        api.listDeployBindings().catch(() => [] as DeployBindingView[]),
+      ])
+      if (!alive) return
+      setHealth(mem)
+      setFacts(listedFacts)
+      setNotes(listedNotes)
+      setGraph(listedGraph)
+      setTargets(listedTargets)
+      setBindings(listedBindings)
     })()
     return () => {
       alive = false
@@ -142,6 +173,31 @@ export function App() {
   async function refreshRules() {
     try {
       setRules(await api.listPermissionRules())
+    } catch {
+      return
+    }
+  }
+
+  async function refreshKnowledge() {
+    try {
+      const [listedFacts, listedNotes, listedGraph, mem] = await Promise.all([
+        api.listFacts(),
+        api.listVaultNotes(),
+        api.vaultGraph(),
+        api.memoryHealth(),
+      ])
+      setFacts(listedFacts)
+      setNotes(listedNotes)
+      setGraph(listedGraph)
+      setHealth(mem)
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function refreshDeploy() {
+    try {
+      setBindings(await api.listDeployBindings())
     } catch {
       return
     }
@@ -268,6 +324,50 @@ export function App() {
           onDelete={async (id) => {
             await api.deleteSubagent(id)
             setAgents(await api.listSubagents())
+          }}
+        />
+      ) : null}
+
+      {screen === "knowledge" ? (
+        <Knowledge
+          health={health}
+          facts={facts}
+          notes={notes}
+          graph={graph}
+          onSearch={(q) => api.memoryContext(q)}
+          onAddFact={async (statement) => {
+            await api.addFact({ statement })
+            await refreshKnowledge()
+          }}
+          onOpenNote={(id) => api.readVaultNote(id)}
+          onSaveNote={async (body) => {
+            await api.writeVaultNote(body)
+            await refreshKnowledge()
+          }}
+        />
+      ) : null}
+
+      {screen === "deploy" ? (
+        <DeployPanel
+          runId={run.runId}
+          goal={run.goal}
+          targets={targets}
+          bindings={bindings}
+          detected={detected}
+          last={lastDeploy}
+          onDetect={async (runId) => {
+            setDetected(await api.detectDeploy(runId))
+            await refreshDeploy()
+          }}
+          onSaveToken={async (body) => {
+            const stored = await api.saveDeployCredentials(body)
+            setNotice(`token stored for ${stored.targetId}`)
+          }}
+          onDeploy={async (body) => {
+            const result = await api.deployRun(body)
+            setLastDeploy(result)
+            setNotice(result.status === "live" ? result.url : result.message ?? "deploy failed")
+            await refreshDeploy()
           }}
         />
       ) : null}

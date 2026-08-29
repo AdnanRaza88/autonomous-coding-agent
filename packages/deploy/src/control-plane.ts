@@ -23,7 +23,9 @@ import {
 import type { PermissionDecision, PermissionRequest } from "@agent-core/mcp-hooks-plugins"
 import { getSubagentDefinition, listSubagentDefinitions, registerSubagentDefinition } from "@agent-core/subagents"
 import type { Runtime } from "./bootstrap.js"
+import { rememberCompletedRun } from "./knowledge-plane.js"
 import { formatSse, parseEventCursor, SSE_HEADERS } from "./sse.js"
+import { getMemoryLayer } from "@agent-core/memory-knowledge"
 
 type Draft = {
   id: string
@@ -417,6 +419,10 @@ function persistRun(runtime: Runtime, runId: string, goalHint?: string): void {
     status: rec?.status ?? prev?.status ?? "planning",
     createdAt: prev?.createdAt ?? new Date(rec?.createdAt ?? Date.now()).toISOString(),
   })
+  const memory = getMemoryLayer()
+  if (memory && rec && (rec.status === "complete" || rec.status === "error" || rec.status === "cancelled")) {
+    void rememberCompletedRun(runtime, memory, runId)
+  }
 }
 
 function openSse(reply: FastifyReply): void {
