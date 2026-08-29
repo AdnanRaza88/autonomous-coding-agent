@@ -9,6 +9,9 @@ import type {
   PermissionPrompt,
   PermissionRuleView,
   RunSummary,
+  ProviderModel,
+  ProviderSummary,
+  SaveProviderRequest,
   SavedProvider,
   SlashCommandInfo,
   SubagentDraft,
@@ -27,10 +30,12 @@ import { PermissionModal } from "./ui/PermissionModal"
 import { CommandPalette } from "./ui/CommandPalette"
 import { Knowledge } from "./ui/Knowledge"
 import { DeployPanel } from "./ui/DeployPanel"
+import { Onboarding } from "./ui/Onboarding"
 import { emptyRun, hydrateRun, reduceRun, type RunView } from "./state/events"
 import { applyTheme, type ThemeMode } from "./theme/tokens"
 import { readStoredTheme, toggleTheme, writeStoredTheme } from "./theme/persist"
 import { parseComposer } from "./lib/filter"
+import { needsOnboarding, readyProvider } from "./lib/onboarding"
 
 const useLiveBackend = import.meta.env.VITE_API_MODE !== "mock"
 const LAST_RUN_KEY = "agent-core.last-run"
@@ -45,8 +50,8 @@ export function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [run, setRun] = useReducer(reduceView, emptyRun())
   const [history, setHistory] = useState<RunSummary[]>([])
-  const [providers, setProviders] = useState<{ id: string; name: string }[]>([])
-  const [models, setModels] = useState<{ id: string; name: string }[]>([])
+  const [providers, setProviders] = useState<ProviderSummary[]>([])
+  const [models, setModels] = useState<ProviderModel[]>([])
   const [providerId, setProviderId] = useState("groq")
   const [model, setModel] = useState("")
   const [saved, setSaved] = useState<SavedProvider[]>([])
@@ -67,6 +72,10 @@ export function App() {
   const [bindings, setBindings] = useState<DeployBindingView[]>([])
   const [detected, setDetected] = useState<DetectedProjectView | null>(null)
   const [lastDeploy, setLastDeploy] = useState<DeployResultView | null>(null)
+  const [booted, setBooted] = useState(false)
+  const [probeBusy, setProbeBusy] = useState(false)
+  const [probeStatus, setProbeStatus] = useState("")
+  const [forceOnboard, setForceOnboard] = useState(false)
 
   cursorRef.current = run.cursor
 
@@ -126,6 +135,7 @@ export function App() {
       setGraph(listedGraph)
       setTargets(listedTargets)
       setBindings(listedBindings)
+      setBooted(true)
     })()
     return () => {
       alive = false
@@ -210,6 +220,51 @@ export function App() {
     setModel(mods[0]?.id ?? "")
   }
 
+  const usable = readyProvider(saved, providerId)
+  const blocked = booted && !usable
+  const showOnboarding = booted && (forceOnboard || needsOnboarding(saved))
+
+  async function storeProvider(body: SaveProviderRequest) {
+    setProbeBusy(true)
+    setProbeStatus("storing")
+    try {
+      await api.saveProvider(body)
+      const listed = await api.listSavedProviders()
+      setSaved(listed)
+      setProviderId(body.id)
+      const mods = await api.listProviderModels(body.id)
+      setModels(mods)
+      setModel(body.model || mods[0]?.id || "")
+      const probe = await api.probeProvider(body.id)
+      if (!probe.ok) {
+        setProbeStatus(probe.message ?? probe.code ?? "probe failed")
+        setNotice(probe.message ?? `probe failed for ${body.id}`)
+        return
+      }
+      setProbeStatus(`connected in ${probe.latencyMs}ms`)
+      setNotice(`${body.id} ready`)
+      setForceOnboard(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setProbeStatus(message)
+      setNotice(message)
+    } finally {
+      setProbeBusy(false)
+    }
+  }
+
+  async function useLocalRuntime() {
+    const catalog = providers.find((row) => row.id === "ollama")
+    const first = (await api.listProviderModels("ollama"))[0]
+    await storeProvider({
+      id: "ollama",
+      baseUrl: catalog?.defaultBaseUrl ?? "http://127.0.0.1:11434/v1",
+      apiKey: "",
+      model: first?.id ?? "qwen2.5-coder:7b",
+      contextWindow: first?.contextWindow ?? 32768,
+    })
+  }
+
   async function openRun(id: string) {
     try {
       const snap = await api.getRun(id)
@@ -229,6 +284,10 @@ export function App() {
     }
     const goal = draft.trim()
     if (!goal) return
+    if (!readyProvider(saved, providerId)) {
+      setForceOnboard(true)
+      return
+    }
     setBusy(true)
     try {
       const started = await api.startRun({ goal, providerId, model })
@@ -297,7 +356,9 @@ export function App() {
             models={models}
             onModel={setModel}
             busy={busy}
+            blocked={blocked}
             onSubmit={() => void submitGoal()}
+            onBlocked={() => setForceOnboard(true)}
           />
           {paletteOpen ? (
             <CommandPalette
@@ -382,13 +443,14 @@ export function App() {
         <div className="h-full overflow-y-auto">
           <Settings
             providers={providers}
+            models={models}
             saved={saved}
             servers={servers}
             rules={rules}
+            selectedId={providerId}
+            onSelectProvider={(id) => void onProviderChange(id)}
             onSaveProvider={async (body) => {
-              const record = await api.saveProvider(body)
-              setSaved(await api.listSavedProviders())
-              setNotice(`provider ${record.id} stored`)
+              await storeProvider(body)
             }}
             onConnectServer={async (body) => {
               await api.connectMcpServer(body)
@@ -404,6 +466,19 @@ export function App() {
             }}
           />
         </div>
+      ) : null}
+
+      {showOnboarding ? (
+        <Onboarding
+          providers={providers}
+          models={models}
+          initialId={providerId}
+          busy={probeBusy}
+          status={probeStatus}
+          onProvider={(id) => void onProviderChange(id)}
+          onSave={storeProvider}
+          onSkipLocal={useLocalRuntime}
+        />
       ) : null}
 
       {prompt ? (

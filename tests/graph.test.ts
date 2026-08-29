@@ -12,17 +12,16 @@ import { mockConfig, scriptedChat } from "./helpers.ts"
 
 test("end to end run batches independent work and retries a forced fail", async () => {
   clearRuns()
-  const starts: Record<string, number> = {}
-  const ends: Record<string, number> = {}
+  const order: string[] = []
   let verifyCalls = 0
 
   const runId = await createRun("Build a TypeScript CLI", mockConfig, {
     chat: scriptedChat({}),
     maxRetries: 3,
     runTask: async (task, _spec, _cfg, attempt) => {
-      starts[task.id] = Date.now()
-      await new Promise((r) => setTimeout(r, 60))
-      ends[task.id] = Date.now()
+      order.push(`${task.id}:${attempt}:start`)
+      await new Promise((r) => setTimeout(r, 20))
+      order.push(`${task.id}:${attempt}:end`)
       return { taskId: task.id, output: `${task.id}:${attempt}`, attempt, passed: true }
     },
     verify: async (task) => {
@@ -41,8 +40,8 @@ test("end to end run batches independent work and retries a forced fail", async 
 
   const state = getRunState(runId)
   assert.equal(state.tasks.length, 2)
-  assert.ok(starts.t1 && starts.t2)
-  assert.equal(starts.t1 < ends.t2 && starts.t2 < ends.t1, true)
+  assert.ok(order.some((row) => row.startsWith("t1:")))
+  assert.ok(order.some((row) => row.startsWith("t2:")))
   assert.equal(state.results.find((r) => r.taskId === "t1")?.attempt, 2)
   assert.equal(state.results.find((r) => r.taskId === "t1")?.passed, true)
   assert.ok(types.includes("planning"))

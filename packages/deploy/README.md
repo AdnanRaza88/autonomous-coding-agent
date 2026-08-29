@@ -7,6 +7,8 @@ The server hosts the control-plane HTTP contract used by `packages/web`:
 - `GET /api/providers` catalog from models.dev builtins
 - `GET /api/providers/:id/models`
 - `GET /api/providers/saved` and `POST /api/providers` (keys stay encrypted)
+- `POST /api/providers/:id/probe` live connect check; key never returned
+- `POST /api/runs` rejects a provider with no stored key (Ollama excepted)
 - `POST /api/runs`, `GET /api/runs`, `GET /api/runs/:id`
 - `POST /api/runs/:id/cancel` cooperative abort
 - `GET /api/runs/:id/events` Server-Sent Events of `OrchestratorEvent` frames

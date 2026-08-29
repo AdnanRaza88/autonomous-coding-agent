@@ -6,7 +6,7 @@ export type { EventStream as EventSocket }
 export function connectEventSocket(
   url: string,
   onMessage: (msg: WsInbound) => void,
-  onStatus?: (state: "open" | "closed" | "error") => void,
+  onStatus?: (state: "open" | "closed" | "error" | "reconnecting") => void,
 ): EventStream {
   if (url.startsWith("ws://") || url.startsWith("wss://")) {
     return connectLegacySocket(url, onMessage, onStatus)
@@ -21,7 +21,7 @@ export function wsUrlFor(runId: string, origin = location.origin): string {
 function connectLegacySocket(
   url: string,
   onMessage: (msg: WsInbound) => void,
-  onStatus?: (state: "open" | "closed" | "error") => void,
+  onStatus?: (state: "open" | "closed" | "error" | "reconnecting") => void,
 ): EventStream {
   const socket = new WebSocket(url)
   socket.addEventListener("open", () => onStatus?.("open"))

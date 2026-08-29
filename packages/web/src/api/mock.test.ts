@@ -3,6 +3,17 @@ import { test } from "node:test"
 import { createMockApi, createMockBus } from "./mock.ts"
 import { redactProvider } from "./contract.ts"
 
+async function withKey(api: ReturnType<typeof createMockApi>) {
+  await api.saveProvider({
+    id: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    apiKey: "gsk-test",
+    model: "llama-3.3-70b-versatile",
+    contextWindow: 128000,
+  })
+  return api
+}
+
 test("saved provider never returns the raw key", async () => {
   const api = createMockApi(createMockBus())
   const saved = await api.saveProvider({
@@ -38,6 +49,7 @@ test("redactProvider drops apiKey", () => {
 test("startRun emits plan then completion on the bus", async () => {
   const bus = createMockBus()
   const api = createMockApi(bus)
+  await withKey(api)
   const seen: string[] = []
   const stop = bus.subscribe((msg) => {
     if (msg.channel === "orchestrator") seen.push(msg.event.type)
@@ -54,6 +66,7 @@ test("startRun emits plan then completion on the bus", async () => {
 
 test("listRuns keeps started goals and cancel marks cancelled", async () => {
   const api = createMockApi(createMockBus())
+  await withKey(api)
   const started = await api.startRun({ goal: "abort me", providerId: "groq", model: "llama-3.3-70b-versatile" })
   const listed = await api.listRuns()
   assert.ok(listed.some((r) => r.id === started.runId && r.goal === "abort me"))
@@ -116,6 +129,7 @@ test("memory facts recall and vault notes form a graph", async () => {
 
 test("deploy detect and ship hide the token", async () => {
   const api = createMockApi(createMockBus())
+  await withKey(api)
   const started = await api.startRun({
     goal: "ship a static landing page",
     providerId: "groq",
@@ -129,4 +143,38 @@ test("deploy detect and ship hide the token", async () => {
   const live = await api.deployRun({ runId: started.runId, targetId: "vercel" })
   assert.equal(live.status, "live")
   assert.ok(live.url.includes("vercel.app"))
+})
+
+test("probeProvider reports missing keys and rejects marked secrets", async () => {
+  const api = createMockApi(createMockBus())
+  const missing = await api.probeProvider("groq")
+  assert.equal(missing.ok, false)
+  assert.equal(missing.code, "missing_key")
+  await api.saveProvider({
+    id: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    apiKey: "fail",
+    model: "llama-3.3-70b-versatile",
+    contextWindow: 128000,
+  })
+  const bad = await api.probeProvider("groq")
+  assert.equal(bad.ok, false)
+  assert.equal(bad.code, "auth")
+  await api.saveProvider({
+    id: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    apiKey: "gsk-ok",
+    model: "llama-3.3-70b-versatile",
+    contextWindow: 128000,
+  })
+  const good = await api.probeProvider("groq")
+  assert.equal(good.ok, true)
+})
+
+test("startRun refuses a provider with no stored key", async () => {
+  const api = createMockApi(createMockBus())
+  await assert.rejects(
+    () => api.startRun({ goal: "no key", providerId: "groq", model: "llama-3.3-70b-versatile" }),
+    /no stored key/,
+  )
 })

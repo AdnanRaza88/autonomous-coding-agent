@@ -111,6 +111,13 @@ export interface SaveProviderRequest {
   contextWindow: number
 }
 
+export interface ProviderProbe {
+  ok: boolean
+  latencyMs: number
+  code?: string
+  message?: string
+}
+
 export interface MemoryHealth {
   automem: "ok" | "down" | "skipped"
   graphiti: "ok" | "down" | "skipped"
@@ -185,6 +192,7 @@ export interface AgentCoreApi {
   listProviderModels(providerId: string): Promise<ProviderModel[]>
   listSavedProviders(): Promise<SavedProvider[]>
   saveProvider(body: SaveProviderRequest): Promise<SavedProvider>
+  probeProvider(id: string): Promise<ProviderProbe>
   startRun(body: StartRunRequest): Promise<StartRunResponse>
   getRun(runId: string): Promise<RunSnapshot>
   listRuns(): Promise<RunSummary[]>

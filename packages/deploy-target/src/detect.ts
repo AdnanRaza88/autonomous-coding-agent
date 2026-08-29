@@ -49,6 +49,11 @@ export function detectProjectKind(spec: SharedSpec, projectDir?: string): Detect
     return { kind: fromConstraints.kind, framework: fromConstraints.framework, reasons }
   }
 
+  if (projectDir) {
+    const fromDisk = kindFromDisk(projectDir)
+    if (fromDisk) return fromDisk
+  }
+
   const hay = `${spec.goal} ${Object.values(spec.constraints).join(" ")}`.toLowerCase()
   const containerHits = CONTAINER_HINTS.filter((h) => hay.includes(h))
   const staticHits = STATIC_HINTS.filter((h) => hay.includes(h))
@@ -59,11 +64,6 @@ export function detectProjectKind(spec: SharedSpec, projectDir?: string): Detect
   if (staticHits.length) {
     reasons.push(`goal mentions ${staticHits.join(", ")}`)
     return { kind: "static", reasons }
-  }
-
-  if (projectDir) {
-    const fromDisk = kindFromDisk(projectDir)
-    if (fromDisk) return fromDisk
   }
 
   reasons.push("default static")
@@ -100,7 +100,7 @@ function kindFromDisk(projectDir: string): DetectedProject | null {
   if (existsSync(pkgPath)) {
     const pkg = readJson(pkgPath)
     const deps = { ...asRecord(pkg.dependencies), ...asRecord(pkg.devDependencies) }
-    const hit = SERVER_DEPS.find((name) => name in deps)
+    const hit = SERVER_DEPS.find((name) => Object.prototype.hasOwnProperty.call(deps, name))
     if (hit) {
       reasons.push(`package.json depends on ${hit}`)
       return { kind: "container", framework: hit, reasons }
