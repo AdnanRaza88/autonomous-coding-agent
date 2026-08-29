@@ -131,6 +131,7 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
     },
     async saveProvider(body: SaveProviderRequest) {
       if (body.apiKey) keys.set(body.id, body.apiKey)
+      else keys.delete(body.id)
       const record = redactProvider({
         id: body.id,
         baseUrl: body.baseUrl,
@@ -141,7 +142,20 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       saved.set(body.id, record)
       return record
     },
+    async probeProvider(id) {
+      const key = keys.get(id)
+      if (!key && id !== "ollama") {
+        return { ok: false, latencyMs: 0, code: "missing_key", message: "no stored key" }
+      }
+      if (key === "fail") {
+        return { ok: false, latencyMs: 2, code: "auth", message: "rejected" }
+      }
+      return { ok: true, latencyMs: 3 }
+    },
     async startRun(body: StartRunRequest) {
+      if (body.providerId !== "ollama" && !keys.get(body.providerId)) {
+        throw new Error(`no stored key for ${body.providerId}`)
+      }
       const runId = `run_${++seq}`
       const tasks = planFromGoal(body.goal)
       const snapshot: RunSnapshot = {
