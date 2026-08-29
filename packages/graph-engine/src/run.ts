@@ -2,7 +2,10 @@ import type { AgentResult, AgentTask, OrchestratorEvent, ProviderConfig, SharedS
 import {
   createRecord,
   getRecord,
+  isTerminal,
+  listRecords,
   pushEvent,
+  requestCancel,
   requireRecord,
   setSpec,
   setTasks,
@@ -10,7 +13,7 @@ import {
 } from "./blackboard.js"
 import type { CreateRunOptions } from "./deps.js"
 import { resolveChat } from "./deps.js"
-import { executeRun } from "./executor.js"
+import { executeRun, finishCancel } from "./executor.js"
 import { newRunId } from "./ids.js"
 import { planTasks } from "./planner.js"
 import { freezeSpec, generateSpec } from "./spec.js"
@@ -40,8 +43,17 @@ export async function createRun(
     setTasks(runId, planned.tasks, planned.roles)
     pushEvent(runId, { type: "plan_ready", tasks: planned.tasks.map(cloneTask) })
   } catch (err) {
+    if (getRecord(runId)?.cancelled) {
+      finishCancel(runId)
+      return runId
+    }
     const message = err instanceof Error ? err.message : String(err)
     pushEvent(runId, { type: "error", message })
+    return runId
+  }
+
+  if (getRecord(runId)?.cancelled) {
+    finishCancel(runId)
     return runId
   }
 
@@ -57,6 +69,15 @@ export async function createRun(
   return runId
 }
 
+export function cancelRun(runId: string, reason = "cancelled"): boolean {
+  const rec = getRecord(runId)
+  if (!rec) return false
+  if (isTerminal(rec.status)) return false
+  requestCancel(runId)
+  if (!inflight.has(runId)) finishCancel(runId, reason)
+  return true
+}
+
 export async function* getRunEvents(runId: string, after = -1): AsyncIterable<OrchestratorEvent> {
   const rec = getRecord(runId)
   if (!rec) throw new Error(`unknown run: ${runId}`)
@@ -67,20 +88,18 @@ export async function* getRunEvents(runId: string, after = -1): AsyncIterable<Or
       yield current.events[cursor]
       cursor += 1
     }
-    if (current.status === "complete" || current.status === "error") return
+    if (isTerminal(current.status)) return
     await waitForEvent(runId)
   }
 }
 
 export function getRunState(runId: string): {
-  spec: SharedSpec
+  spec: SharedSpec | null
   tasks: AgentTask[]
   results: AgentResult[]
+  status: string
 } {
   const rec = requireRecord(runId)
-  if (!rec.spec) {
-    throw new Error(`run ${runId} has no spec yet`)
-  }
   return {
     spec: rec.spec,
     tasks: rec.tasks.map(cloneTask),
@@ -90,7 +109,17 @@ export function getRunState(runId: string): {
       attempt: r.attempt,
       passed: r.passed,
     })),
+    status: rec.status,
   }
+}
+
+export function listRuns(): Array<{ id: string; status: string; createdAt: number; goal?: string }> {
+  return listRecords().map((rec) => ({
+    id: rec.id,
+    status: rec.status,
+    createdAt: rec.createdAt,
+    goal: rec.spec?.goal,
+  }))
 }
 
 export async function waitForRun(runId: string): Promise<void> {
@@ -98,7 +127,7 @@ export async function waitForRun(runId: string): Promise<void> {
   if (pending) await pending
   const rec = getRecord(runId)
   if (!rec) return
-  while (rec.status !== "complete" && rec.status !== "error") {
+  while (!isTerminal(rec.status)) {
     await waitForEvent(runId)
   }
 }

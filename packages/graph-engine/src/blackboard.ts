@@ -1,6 +1,6 @@
 import type { AgentResult, AgentTask, OrchestratorEvent, SharedSpec } from "@agent-core/types"
 
-export type RunStatus = "planning" | "running" | "complete" | "error"
+export type RunStatus = "planning" | "running" | "complete" | "error" | "cancelled"
 
 export type RunRecord = {
   id: string
@@ -11,11 +11,18 @@ export type RunRecord = {
   status: RunStatus
   roles: Map<string, string>
   error?: string
+  cancelled: boolean
   createdAt: number
 }
 
 const runs = new Map<string, RunRecord>()
 const waiters = new Map<string, Set<() => void>>()
+
+const TERMINAL: RunStatus[] = ["complete", "error", "cancelled"]
+
+export function isTerminal(status: RunStatus): boolean {
+  return TERMINAL.includes(status)
+}
 
 export function createRecord(id: string): RunRecord {
   const rec: RunRecord = {
@@ -26,6 +33,7 @@ export function createRecord(id: string): RunRecord {
     events: [],
     status: "planning",
     roles: new Map(),
+    cancelled: false,
     createdAt: Date.now(),
   }
   runs.set(id, rec)
@@ -34,6 +42,10 @@ export function createRecord(id: string): RunRecord {
 
 export function getRecord(runId: string): RunRecord | undefined {
   return runs.get(runId)
+}
+
+export function listRecords(): RunRecord[] {
+  return [...runs.values()].sort((a, b) => b.createdAt - a.createdAt)
 }
 
 export function requireRecord(runId: string): RunRecord {
@@ -69,21 +81,37 @@ export function addResult(runId: string, result: AgentResult): void {
   else rec.results.push(result)
 }
 
+export function requestCancel(runId: string): boolean {
+  const rec = getRecord(runId)
+  if (!rec || isTerminal(rec.status)) return false
+  rec.cancelled = true
+  return true
+}
+
+export function wasCancelled(runId: string): boolean {
+  return Boolean(getRecord(runId)?.cancelled)
+}
+
 export function pushEvent(runId: string, event: OrchestratorEvent): void {
   const rec = requireRecord(runId)
   rec.events.push(event)
   if (event.type === "run_complete") rec.status = "complete"
   if (event.type === "error") rec.status = "error"
+  if (event.type === "run_cancelled") {
+    rec.status = "cancelled"
+    rec.error = event.reason
+  }
   wake(runId)
 }
 
 export function markRunning(runId: string): void {
-  requireRecord(runId).status = "running"
+  const rec = requireRecord(runId)
+  if (!rec.cancelled && rec.status === "planning") rec.status = "running"
 }
 
 export function waitForEvent(runId: string): Promise<void> {
   const rec = runs.get(runId)
-  if (!rec || rec.status === "complete" || rec.status === "error") {
+  if (!rec || isTerminal(rec.status)) {
     return Promise.resolve()
   }
   return new Promise((resolve) => {
@@ -94,7 +122,7 @@ export function waitForEvent(runId: string): Promise<void> {
     }
     bucket.add(resolve)
     const latest = runs.get(runId)
-    if (!latest || latest.status === "complete" || latest.status === "error") {
+    if (!latest || isTerminal(latest.status)) {
       wake(runId)
     }
   })
