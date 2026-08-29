@@ -13,6 +13,7 @@ import type {
   PermissionRuleView,
   ProjectContextView,
   ProviderModel,
+  ProviderProbe,
   ProviderSummary,
   RunSnapshot,
   RunSummary,
@@ -63,6 +64,8 @@ export function createHttpApi(baseUrl = ""): AgentCoreApi {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    probeProvider: (id) =>
+      request<ProviderProbe>(`/api/providers/${encodeURIComponent(id)}/probe`, { method: "POST" }),
     startRun: (body: StartRunRequest) =>
       request<StartRunResponse>("/api/runs", {
         method: "POST",
