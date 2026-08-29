@@ -94,6 +94,9 @@ export interface RunSnapshot {
   results: AgentResult[]
   events: OrchestratorEvent[]
   error?: string
+  inputTokens?: number
+  outputTokens?: number
+  calls?: number
 }
 
 export interface RunSummary {
@@ -101,6 +104,9 @@ export interface RunSummary {
   goal: string
   status: string
   createdAt: string
+  inputTokens?: number
+  outputTokens?: number
+  calls?: number
 }
 
 export interface SaveProviderRequest {
