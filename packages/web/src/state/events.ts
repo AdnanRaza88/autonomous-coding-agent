@@ -8,6 +8,8 @@ export interface RunView {
   tasks: AgentTask[]
   results: AgentResult[]
   log: string[]
+  drafts: Record<string, string>
+  notes: Record<string, string>
   error?: string
   cursor: number
   inputTokens: number
@@ -22,6 +24,8 @@ export const emptyRun = (): RunView => ({
   tasks: [],
   results: [],
   log: [],
+  drafts: {},
+  notes: {},
   cursor: -1,
   inputTokens: 0,
   outputTokens: 0,
@@ -48,16 +52,29 @@ export function reduceRun(view: RunView, event: OrchestratorEvent): RunView {
       log: [...view.log, `start ${event.taskId}`],
     }
   }
+  if (event.type === "agent_delta") {
+    const prior = view.drafts[event.taskId] ?? ""
+    const text = prior && event.text.startsWith(prior) ? event.text : prior + event.text
+    return {
+      ...next,
+      drafts: { ...view.drafts, [event.taskId]: text },
+    }
+  }
   if (event.type === "agent_verify") {
     return {
       ...next,
       tasks: setStatus(view.tasks, event.taskId, event.pass ? "verifying" : "retrying"),
+      notes: { ...view.notes, [event.taskId]: event.feedback },
       log: [...view.log, `verify ${event.taskId} attempt ${event.attempt} ${event.pass ? "pass" : "fail"}`],
     }
   }
   if (event.type === "agent_done") {
+    const drafts = event.output
+      ? { ...view.drafts, [event.taskId]: event.output }
+      : view.drafts
     return {
       ...next,
+      drafts,
       tasks: setStatus(view.tasks, event.taskId, "passed"),
       log: [...view.log, `done ${event.taskId}`],
     }
@@ -103,7 +120,13 @@ export function hydrateRun(snapshot: RunSnapshot & { goal?: string }): RunView {
   }
   for (const event of snapshot.events) view = reduceRun(view, event)
   if (snapshot.tasks.length) view = { ...view, tasks: snapshot.tasks.map((t) => ({ ...t })) }
-  if (snapshot.results.length) view = { ...view, results: snapshot.results.map((r) => ({ ...r })) }
+  if (snapshot.results.length) {
+    const drafts = { ...view.drafts }
+    for (const result of snapshot.results) {
+      if (result.output && !drafts[result.taskId]) drafts[result.taskId] = result.output
+    }
+    view = { ...view, results: snapshot.results.map((r) => ({ ...r })), drafts }
+  }
   if (snapshot.status === "cancelled") view = { ...view, phase: "cancelled", error: snapshot.error }
   else if (snapshot.error) view = { ...view, phase: "error", error: snapshot.error }
   else if (snapshot.status === "complete") view = { ...view, phase: "complete" }
