@@ -158,6 +158,10 @@ export class ConfigStore {
     this.persist()
   }
 
+  getRun(id: string): StoredRun | undefined {
+    return this.doc.runs.find((r) => r.id === id)
+  }
+
   listRuns(): StoredRun[] {
     return [...this.doc.runs]
   }
