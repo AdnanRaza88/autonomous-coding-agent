@@ -2,11 +2,12 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import Fastify, { type FastifyInstance } from "fastify"
 import { bootstrapRuntime, type BootstrapOptions, type Runtime } from "./bootstrap.js"
+import { registerControlPlane, type ControlPlaneOptions } from "./control-plane.js"
 import { DEFAULT_PORT } from "./paths.js"
 import { VERSION } from "./version.js"
 import { DeploySecurityError } from "./errors.js"
 
-export type ServerOptions = BootstrapOptions & {
+export type ServerOptions = BootstrapOptions & ControlPlaneOptions & {
   port?: number
   host?: string
   webRoot?: string
@@ -47,10 +48,6 @@ export async function createApp(opts: ServerOptions = {}): Promise<AppHandle> {
       return { id, kind }
     },
   )
-
-  app.get("/api/providers", async () => ({ providers: runtime.store.listProviders() }))
-  app.get("/api/subagents", async () => ({ subagents: runtime.store.listSubagents() }))
-  app.get("/api/runs", async () => ({ runs: runtime.store.listRuns() }))
 
   app.get<{ Querystring: { limit?: string } }>("/api/audit", async (req) => {
     const limit = Number(req.query.limit ?? 100)
@@ -98,6 +95,8 @@ export async function createApp(opts: ServerOptions = {}): Promise<AppHandle> {
       return securityReply(reply, err)
     }
   })
+
+  await registerControlPlane(app, runtime, { runOptions: opts.runOptions })
 
   const webRoot = opts.webRoot ?? process.env.AGENT_CORE_WEB_ROOT
   if (webRoot && existsSync(webRoot)) {

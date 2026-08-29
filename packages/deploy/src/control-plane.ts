@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import type { AgentResult, AgentTask, OrchestratorEvent, ProviderConfig } from "@agent-core/types"
+import type { AgentResult, AgentTask, ProviderConfig } from "@agent-core/types"
 import { getProviderModels, listBuiltinProviders } from "@agent-core/providers"
 import { createRun, getRecord } from "@agent-core/graph-engine"
 import type { CreateRunOptions } from "@agent-core/graph-engine"
@@ -10,13 +10,13 @@ import {
 } from "@agent-core/subagents"
 import {
   connectMcpServer,
+  getServerConfig,
   listConfiguredServers,
   listConnectedServers,
   listSlashCommands,
   rememberServerConfig,
   runSlashCommand,
   setPermissionHandler,
-  getServerConfig,
 } from "@agent-core/mcp-hooks-plugins"
 import type { PermissionDecision, PermissionRequest } from "@agent-core/mcp-hooks-plugins"
 import type { Runtime } from "./bootstrap.js"
@@ -95,7 +95,7 @@ export async function registerControlPlane(
     const secretId = `provider:${id}`
     if (req.body?.apiKey) runtime.store.putSecret(secretId, "provider", req.body.apiKey)
     runtime.store.upsertProvider({ id, baseUrl, model, contextWindow, secretId })
-    runtime.audit.append("provider.upsert", { id })
+    runtime.audit.write({ action: "provider.upsert", allowed: true, detail: id })
     return {
       id,
       baseUrl,
@@ -133,7 +133,7 @@ export async function registerControlPlane(
       definition: draft,
       updatedAt: new Date().toISOString(),
     })
-    runtime.audit.append("subagent.upsert", { id: draft.id })
+    runtime.audit.write({ action: "subagent.upsert", allowed: true, detail: draft.id })
     return draft
   })
 
@@ -217,7 +217,7 @@ export async function registerControlPlane(
     } catch {
       connected = false
     }
-    runtime.audit.append("mcp.connect", { id, connected })
+    runtime.audit.write({ action: "mcp.connect", allowed: connected, detail: id })
     return { id, transport, command: config.command, args: config.args, url: config.url, connected }
   })
 
@@ -264,7 +264,7 @@ export async function registerControlPlane(
         status: "planning",
         createdAt: new Date().toISOString(),
       })
-      runtime.audit.append("run.start", { runId, providerId })
+      runtime.audit.write({ action: "run.start", allowed: true, detail: runId })
       return { runId }
     },
   )
@@ -301,7 +301,8 @@ function resolveProvider(runtime: Runtime, providerId: string, model?: string): 
   }
   const catalog = listBuiltinProviders().find((p) => p.id === providerId)
   if (!catalog) return undefined
-  const secret = runtime.store.getSecretPlain(`provider:${providerId}`) ?? runtime.store.getSecretPlain(providerId) ?? ""
+  const secret =
+    runtime.store.getSecretPlain(`provider:${providerId}`) ?? runtime.store.getSecretPlain(providerId) ?? ""
   return {
     id: catalog.id,
     baseUrl: catalog.defaultBaseUrl,
