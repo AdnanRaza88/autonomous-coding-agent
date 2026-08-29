@@ -30,6 +30,20 @@ export function permissionEventsUrl(origin: string): string {
   return `${origin.replace(/\/$/, "")}/api/permissions/events`
 }
 
+export function cancelRunUrl(origin: string, runId: string): string {
+  return `${origin.replace(/\/$/, "")}/api/runs/${encodeURIComponent(runId)}/cancel`
+}
+
+export async function cancelIdeRun(
+  origin: string,
+  runId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ runId: string; cancelled: boolean; status?: string }> {
+  const res = await fetchImpl(cancelRunUrl(origin, runId), { method: "POST" })
+  if (!res.ok) throw new Error(`cancel ${res.status}`)
+  return (await res.json()) as { runId: string; cancelled: boolean; status?: string }
+}
+
 export function parseSseBlock(chunk: string): { event: string; data: string; id?: string }[] {
   const frames: { event: string; data: string; id?: string }[] = []
   for (const part of chunk.split("\n\n")) {
