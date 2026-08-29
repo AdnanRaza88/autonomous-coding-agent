@@ -1,19 +1,27 @@
 import assert from "node:assert/strict"
 import { afterEach, test } from "node:test"
 import { McpError } from "./errors.js"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { filePermissionStore } from "./persist.js"
 import {
   addPermissionRule,
+  grantAlways,
   grantSession,
   listPermissionRules,
+  loadPersistedRules,
   requestPermission,
   revokeGrants,
   setPermissionHandler,
+  setPermissionStore,
 } from "./permission.js"
 import type { PermissionRequest } from "./types.js"
 
 afterEach(() => {
   revokeGrants()
   setPermissionHandler(undefined)
+  setPermissionStore(undefined)
 })
 
 function req(over: Partial<PermissionRequest> = {}): PermissionRequest {
@@ -93,4 +101,19 @@ test("allow_always survives session clear via persist flag", async () => {
   assert.equal(await requestPermission(req()), true)
   const listed = listPermissionRules()
   assert.equal(listed.some((r) => r.persist === "always"), true)
+})
+
+test("always grants survive a process-local store reload", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "perm-store-"))
+  const path = join(dir, "permissions.json")
+  setPermissionStore(filePermissionStore(path))
+  grantAlways(req())
+  assert.equal(listPermissionRules().some((r) => r.persist === "always"), true)
+  setPermissionStore(undefined)
+  revokeGrants()
+  setPermissionStore(filePermissionStore(path))
+  const restored = loadPersistedRules()
+  assert.equal(restored.length, 1)
+  assert.equal(restored[0]?.action, "mcp:filesystem:read_file")
+  assert.equal(await requestPermission(req()), true)
 })
