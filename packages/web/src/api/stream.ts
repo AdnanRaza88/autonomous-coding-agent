@@ -58,7 +58,8 @@ export function withAfter(url: string, after?: number): string {
 }
 
 export function terminalEvent(msg: WsInbound): boolean {
-  return msg.channel === "orchestrator" && (msg.event.type === "run_complete" || msg.event.type === "error")
+  if (msg.channel !== "orchestrator") return false
+  return msg.event.type === "run_complete" || msg.event.type === "error" || msg.event.type === "run_cancelled"
 }
 
 export function connectSse(

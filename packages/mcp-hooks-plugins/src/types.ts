@@ -36,7 +36,28 @@ export interface PermissionRequest {
   args?: Record<string, unknown>
 }
 
-export type PermissionDecision = "allow" | "deny" | "allow_session"
+export type PermissionDecision =
+  | "allow"
+  | "deny"
+  | "allow_session"
+  | "allow_always"
+  | "allow_server"
+  | "deny_session"
+
+export type PermissionScope = "exact" | "tool" | "server" | "kind"
+
+export interface PermissionRule {
+  id: string
+  effect: "allow" | "deny"
+  scope: PermissionScope
+  persist: "session" | "always"
+  kind?: PermissionKind
+  serverId?: string
+  toolName?: string
+  command?: string
+  action?: string
+  expiresAt?: number
+}
 
 export type PermissionHandler = (
   request: PermissionRequest

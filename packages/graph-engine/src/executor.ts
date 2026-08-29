@@ -5,6 +5,7 @@ import {
   pushEvent,
   requireRecord,
   updateTask,
+  wasCancelled,
 } from "./blackboard.js"
 import { topologicalBatches } from "./dag.js"
 import type { CreateRunOptions, TaskRunner, Verifier } from "./deps.js"
@@ -12,6 +13,13 @@ import { resolveRunner } from "./deps.js"
 import { appendFeedback, heuristicVerify, verifyResult } from "./verify.js"
 
 const DEFAULT_RETRIES = 3
+
+export class RunCancelled extends Error {
+  constructor(runId: string) {
+    super(`run cancelled: ${runId}`)
+    this.name = "RunCancelled"
+  }
+}
 
 export async function executeRun(
   runId: string,
@@ -29,8 +37,10 @@ export async function executeRun(
   const failed = new Set<string>()
 
   try {
+    assertActive(runId)
     const batches = topologicalBatches(rec.tasks)
     for (const batch of batches) {
+      assertActive(runId)
       const runnable = batch.filter((t) => !blockedByFailure(t, failed))
       for (const skipped of batch.filter((t) => blockedByFailure(t, failed))) {
         updateTask(runId, skipped.id, { status: "failed" })
@@ -46,18 +56,43 @@ export async function executeRun(
       if (runnable.length === 0) continue
       const chunks = chunk(runnable, maxBatch)
       for (const group of chunks) {
+        assertActive(runId)
         await Promise.all(
           group.map((task) => runWithVerify(runId, task, spec, config, runner, verify, maxRetries, failed))
         )
       }
     }
 
+    if (wasCancelled(runId)) {
+      finishCancel(runId)
+      return
+    }
     const results = requireRecord(runId).results
     pushEvent(runId, { type: "run_complete", results: results.map(cloneResult) })
   } catch (err) {
+    if (err instanceof RunCancelled || wasCancelled(runId)) {
+      finishCancel(runId)
+      return
+    }
     const message = err instanceof Error ? err.message : String(err)
     pushEvent(runId, { type: "error", message })
   }
+}
+
+export function finishCancel(runId: string, reason = "cancelled"): void {
+  const rec = requireRecord(runId)
+  if (rec.events.some((e) => e.type === "run_cancelled")) return
+  rec.cancelled = true
+  for (const task of rec.tasks) {
+    if (task.status === "queued" || task.status === "running" || task.status === "retrying" || task.status === "verifying") {
+      updateTask(runId, task.id, { status: "failed" })
+    }
+  }
+  pushEvent(runId, { type: "run_cancelled", reason })
+}
+
+function assertActive(runId: string): void {
+  if (wasCancelled(runId)) throw new RunCancelled(runId)
 }
 
 async function runWithVerify(
@@ -74,6 +109,7 @@ async function runWithVerify(
   let last: AgentResult | null = null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    assertActive(runId)
     const status = attempt === 1 ? "running" : "retrying"
     updateTask(runId, task.id, { status, instructions })
     if (attempt === 1) pushEvent(runId, { type: "agent_start", taskId: task.id })
@@ -84,6 +120,7 @@ async function runWithVerify(
     try {
       result = await runner(working, spec, config, attempt, role)
     } catch (err) {
+      if (err instanceof RunCancelled) throw err
       result = {
         taskId: task.id,
         output: err instanceof Error ? err.message : String(err),
@@ -92,6 +129,7 @@ async function runWithVerify(
       }
     }
 
+    assertActive(runId)
     updateTask(runId, task.id, { status: "verifying" })
     const verdict = await verify(task, spec, result.output, config)
     pushEvent(runId, {

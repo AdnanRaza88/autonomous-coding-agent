@@ -5,6 +5,7 @@ export function PermissionModal(props: {
   onDecide: (decision: PermissionChoice) => void
 }) {
   const { prompt } = props
+  const server = prompt.serverId
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_oklab,var(--ink)_24%,transparent)] p-4">
       <div className="glass w-full max-w-md rounded-lg p-3">
@@ -23,10 +24,27 @@ export function PermissionModal(props: {
               className="rounded border border-line px-3 py-1.5 text-xs"
               onClick={() => props.onDecide("allow_session")}
             >
-              Allow this session
+              This session
+            </button>
+            {server ? (
+              <button
+                className="rounded border border-line px-3 py-1.5 text-xs"
+                onClick={() => props.onDecide("allow_server")}
+              >
+                {server} this session
+              </button>
+            ) : null}
+            <button
+              className="rounded border border-line px-3 py-1.5 text-xs"
+              onClick={() => props.onDecide("allow_always")}
+            >
+              Always
+            </button>
+            <button className="px-3 py-1.5 text-xs text-muted" onClick={() => props.onDecide("deny_session")}>
+              Deny session
             </button>
             <button className="px-3 py-1.5 text-xs text-muted" onClick={() => props.onDecide("deny")}>
-              Deny
+              Deny once
             </button>
           </div>
         </div>

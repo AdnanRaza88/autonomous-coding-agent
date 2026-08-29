@@ -8,6 +8,7 @@ import type {
   ProviderModel,
   ProviderSummary,
   RunSnapshot,
+  RunSummary,
   SaveProviderRequest,
   SavedProvider,
   SlashCommandInfo,
@@ -84,6 +85,8 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
     connected: true,
   })
   const runs = new Map<string, RunSnapshot>()
+  const summaries = new Map<string, RunSummary>()
+  const aborted = new Set<string>()
   const prompts = new Map<string, PermissionPrompt>()
   let seq = 0
 
@@ -115,18 +118,43 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       const snapshot: RunSnapshot = {
         runId,
         status: "planning",
+        goal: body.goal,
         tasks,
         results: [],
         events: [{ type: "planning" }],
       }
       runs.set(runId, snapshot)
-      queueMicrotask(() => simulateRun(runId, tasks, runs, bus))
+      summaries.set(runId, {
+        id: runId,
+        goal: body.goal,
+        status: "planning",
+        createdAt: new Date().toISOString(),
+      })
+      queueMicrotask(() => simulateRun(runId, tasks, runs, summaries, aborted, bus))
       return { runId }
     },
     async getRun(runId) {
       const snap = runs.get(runId)
       if (!snap) throw new Error(`unknown run ${runId}`)
       return structuredClone(snap)
+    },
+    async listRuns() {
+      return [...summaries.values()].reverse()
+    },
+    async cancelRun(runId) {
+      const snap = runs.get(runId)
+      if (!snap) throw new Error(`unknown run ${runId}`)
+      if (snap.status === "complete" || snap.status === "error" || snap.status === "cancelled") {
+        return { runId, cancelled: false, status: snap.status }
+      }
+      aborted.add(runId)
+      const event: OrchestratorEvent = { type: "run_cancelled", reason: "cancelled" }
+      snap.events.push(event)
+      applyEvent(snap, event)
+      const summary = summaries.get(runId)
+      if (summary) summary.status = "cancelled"
+      bus.publish({ channel: "orchestrator", runId, event })
+      return { runId, cancelled: true, status: "cancelled" }
     },
     async listSubagents() {
       return [...subagents.values()]
@@ -159,6 +187,9 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       prompts.delete(id)
       void decision
     },
+    async clearPermissionSession() {
+      return
+    },
   }
 }
 
@@ -181,13 +212,17 @@ async function simulateRun(
   runId: string,
   tasks: AgentTask[],
   runs: Map<string, RunSnapshot>,
+  summaries: Map<string, RunSummary>,
+  aborted: Set<string>,
   bus: MockBus,
 ): Promise<void> {
   const emit = (event: OrchestratorEvent) => {
     const snap = runs.get(runId)
-    if (!snap) return
+    if (!snap || snap.status === "cancelled") return
     snap.events.push(event)
     applyEvent(snap, event)
+    const summary = summaries.get(runId)
+    if (summary) summary.status = snap.status
     bus.publish({ channel: "orchestrator", runId, event })
   }
 
@@ -196,10 +231,13 @@ async function simulateRun(
   const results: AgentResult[] = []
 
   for (const batch of batches) {
+    if (aborted.has(runId)) return
     await Promise.all(
       batch.map(async (node) => {
+        if (aborted.has(runId)) return
         emit({ type: "agent_start", taskId: node.id })
         await wait(40)
+        if (aborted.has(runId)) return
         emit({
           type: "agent_verify",
           taskId: node.id,
@@ -214,6 +252,7 @@ async function simulateRun(
     )
   }
 
+  if (aborted.has(runId)) return
   emit({ type: "run_complete", results })
 }
 
@@ -242,6 +281,11 @@ export function applyEvent(snap: RunSnapshot, event: OrchestratorEvent): void {
   if (event.type === "run_complete") {
     snap.status = "complete"
     snap.results = event.results
+    return
+  }
+  if (event.type === "run_cancelled") {
+    snap.status = "cancelled"
+    snap.error = event.reason
     return
   }
   snap.status = "error"

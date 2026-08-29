@@ -45,4 +45,5 @@ export type OrchestratorEvent =
   | { type: "agent_verify"; taskId: string; attempt: number; pass: boolean; feedback: string }
   | { type: "agent_done"; taskId: string; output: string }
   | { type: "run_complete"; results: AgentResult[] }
+  | { type: "run_cancelled"; reason: string }
   | { type: "error"; message: string }

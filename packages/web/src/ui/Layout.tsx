@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
+import type { RunSummary } from "../api/contract"
 import type { ThemeMode } from "../theme/tokens"
+import { RunHistory } from "./RunHistory"
 
 type Screen = "run" | "agents" | "settings"
 
@@ -11,6 +13,9 @@ export function Layout(props: {
   theme: ThemeMode
   onToggleTheme: () => void
   notice: string
+  runs: RunSummary[]
+  activeRunId: string | null
+  onOpenRun: (id: string) => void
   children: ReactNode
 }) {
   const { collapsed, screen } = props
@@ -21,19 +26,25 @@ export function Layout(props: {
           collapsed ? "w-16" : "w-64"
         }`}
       >
-        <div className="solid rounded-md p-3">
+        <div className="solid flex min-h-0 flex-1 flex-col rounded-md p-3">
           <button className="text-left text-sm font-medium tracking-tight" onClick={props.onToggleCollapse}>
             {collapsed ? "AC" : "Agent Core"}
           </button>
           {!collapsed ? (
-            <nav className="mt-6 flex flex-col gap-1 text-sm">
-              <NavBtn active={screen === "run"} onClick={() => props.onScreen("run")} label="Run" />
-              <NavBtn active={screen === "agents"} onClick={() => props.onScreen("agents")} label="Subagents" />
-              <NavBtn active={screen === "settings"} onClick={() => props.onScreen("settings")} label="Connections" />
-            </nav>
+            <>
+              <nav className="mt-6 flex flex-col gap-1 text-sm">
+                <NavBtn active={screen === "run"} onClick={() => props.onScreen("run")} label="Run" />
+                <NavBtn active={screen === "agents"} onClick={() => props.onScreen("agents")} label="Subagents" />
+                <NavBtn active={screen === "settings"} onClick={() => props.onScreen("settings")} label="Connections" />
+              </nav>
+              <div className="mt-6 min-h-0 flex-1 overflow-auto">
+                <p className="font-mono text-[10px] uppercase tracking-wide text-muted">History</p>
+                <RunHistory items={props.runs} activeId={props.activeRunId} onOpen={props.onOpenRun} />
+              </div>
+            </>
           ) : null}
         </div>
-        <div className="solid rounded-md p-3">
+        <div className="solid mt-3 rounded-md p-3">
           <button className="w-full text-left text-sm text-muted" onClick={props.onToggleTheme}>
             {collapsed ? (props.theme === "dark" ? "Dk" : "Lt") : props.theme === "dark" ? "Dark" : "Light"}
           </button>

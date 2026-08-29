@@ -83,6 +83,10 @@ test("control plane serves catalog, saved keys, runs, commands, and mcp", async 
   const runId = start.json().runId as string
   assert.ok(runId)
 
+  const history = await app.inject({ method: "GET", url: "/api/runs" })
+  assert.equal(history.statusCode, 200)
+  assert.ok(history.json().runs.some((r: { id: string }) => r.id === runId))
+
   const snap = await waitForRun(app, runId)
   assert.ok(snap.tasks.length >= 1)
   assert.ok(snap.events.some((e: { type: string }) => e.type === "planning"))
@@ -101,6 +105,10 @@ test("control plane serves catalog, saved keys, runs, commands, and mcp", async 
     .filter((f) => f.event === "orchestrator")
     .map((f) => JSON.parse(f.data).event?.type)
   assert.ok(types.includes("planning"))
+
+  const rules = await app.inject({ method: "GET", url: "/api/permissions/rules" })
+  assert.equal(rules.statusCode, 200)
+  assert.ok(Array.isArray(rules.json().rules))
 
   const commands = await app.inject({ method: "GET", url: "/api/commands" })
   assert.equal(commands.statusCode, 200)
@@ -141,6 +149,55 @@ test("control plane serves catalog, saved keys, runs, commands, and mcp", async 
   const all = await app.inject({ method: "GET", url: "/api/subagents" })
   assert.ok(all.json().some((s: { id: string }) => s.id === "reviewer"))
 
+  await handle.close()
+})
+
+test("POST /api/runs/:id/cancel stops an in-flight run", async () => {
+  resetControlPlaneState()
+  const dataDir = mkdtempSync(join(tmpdir(), "ac-cancel-"))
+  const handle = await createApp({
+    dataDir,
+    runOptions: {
+      chat: async (_config: ProviderConfig, messages: ChatMessage[]) => {
+        const last = messages[messages.length - 1]?.content ?? ""
+        if (last.includes("SharedSpec") || last.includes("goal")) {
+          return JSON.stringify({ goal: "slow work", constraints: {} })
+        }
+        return JSON.stringify({
+          tasks: [{ id: "t1", title: "Hang", instructions: "wait", dependsOn: [] }],
+        })
+      },
+      runTask: async (task: AgentTask): Promise<AgentResult> => {
+        await new Promise((r) => setTimeout(r, 400))
+        return { taskId: task.id, output: "late", attempt: 1, passed: true }
+      },
+      verify: async () => ({ pass: true, feedback: "ok" }),
+    },
+  })
+  const put = await handle.app.inject({
+    method: "POST",
+    url: "/api/providers",
+    payload: {
+      id: "groq",
+      baseUrl: "https://api.groq.com/openai/v1",
+      apiKey: "k",
+      model: "llama-3.3-70b-versatile",
+      contextWindow: 128000,
+    },
+  })
+  assert.equal(put.statusCode, 200)
+  const start = await handle.app.inject({
+    method: "POST",
+    url: "/api/runs",
+    payload: { goal: "slow work", providerId: "groq" },
+  })
+  const runId = start.json().runId as string
+  const cancel = await handle.app.inject({ method: "POST", url: `/api/runs/${runId}/cancel` })
+  assert.equal(cancel.statusCode, 200)
+  assert.equal(cancel.json().cancelled, true)
+  await new Promise((r) => setTimeout(r, 50))
+  const snap = await handle.app.inject({ method: "GET", url: `/api/runs/${runId}` })
+  assert.ok(snap.json().status === "cancelled" || snap.json().events.some((e: { type: string }) => e.type === "run_cancelled"))
   await handle.close()
 })
 

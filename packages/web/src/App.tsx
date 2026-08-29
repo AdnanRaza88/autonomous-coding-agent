@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
-import type { PermissionPrompt, SavedProvider, SlashCommandInfo, SubagentDraft } from "./api/contract"
+import type { PermissionPrompt, RunSummary, SavedProvider, SlashCommandInfo, SubagentDraft } from "./api/contract"
 import { createHttpApi } from "./api/client"
 import { createMockApi, createMockBus } from "./api/mock"
 import { watchPermissions, watchRunEvents } from "./api/stream"
@@ -29,6 +29,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen>("run")
   const [collapsed, setCollapsed] = useState(false)
   const [run, setRun] = useReducer(reduceView, emptyRun())
+  const [history, setHistory] = useState<RunSummary[]>([])
   const [providers, setProviders] = useState<{ id: string; name: string }[]>([])
   const [models, setModels] = useState<{ id: string; name: string }[]>([])
   const [providerId, setProviderId] = useState("groq")
@@ -53,17 +54,19 @@ export function App() {
   useEffect(() => {
     let alive = true
     void (async () => {
-      const [plist, slist, clist, mlist] = await Promise.all([
+      const [plist, slist, clist, mlist, rlist] = await Promise.all([
         api.listProviders(),
         api.listSubagents(),
         api.listCommands(),
         api.listMcpServers(),
+        api.listRuns().catch(() => [] as RunSummary[]),
       ])
       if (!alive) return
       setProviders(plist)
       setAgents(slist)
       setCommands(clist)
       setServers(mlist)
+      setHistory(rlist)
       const first = plist[0]?.id ?? "groq"
       setProviderId(first)
       const mods = await api.listProviderModels(first)
@@ -71,16 +74,15 @@ export function App() {
       setModels(mods)
       setModel(mods[0]?.id ?? "")
       setSaved(await api.listSavedProviders())
-      if (useLiveBackend) {
-        const remembered = window.sessionStorage.getItem(LAST_RUN_KEY)
-        if (remembered) {
-          try {
-            const snap = await api.getRun(remembered)
-            if (!alive) return
-            setRun({ kind: "hydrate", snapshot: snap })
-          } catch {
-            window.sessionStorage.removeItem(LAST_RUN_KEY)
-          }
+      const remembered = window.sessionStorage.getItem(LAST_RUN_KEY)
+      const resume = remembered ?? rlist[0]?.id
+      if (resume) {
+        try {
+          const snap = await api.getRun(resume)
+          if (!alive) return
+          setRun({ kind: "hydrate", snapshot: snap })
+        } catch {
+          window.sessionStorage.removeItem(LAST_RUN_KEY)
         }
       }
     })()
@@ -119,11 +121,30 @@ export function App() {
     return () => stream.close()
   }, [])
 
+  async function refreshHistory() {
+    try {
+      setHistory(await api.listRuns())
+    } catch {
+      return
+    }
+  }
+
   async function onProviderChange(id: string) {
     setProviderId(id)
     const mods = await api.listProviderModels(id)
     setModels(mods)
     setModel(mods[0]?.id ?? "")
+  }
+
+  async function openRun(id: string) {
+    try {
+      const snap = await api.getRun(id)
+      setRun({ kind: "hydrate", snapshot: snap })
+      window.sessionStorage.setItem(LAST_RUN_KEY, id)
+      setScreen("run")
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function submitGoal() {
@@ -145,10 +166,23 @@ export function App() {
       }
       setDraft("")
       setScreen("run")
+      await refreshHistory()
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function abortRun() {
+    if (!run.runId) return
+    try {
+      await api.cancelRun(run.runId)
+      const snap = await api.getRun(run.runId)
+      setRun({ kind: "hydrate", snapshot: snap })
+      await refreshHistory()
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -167,11 +201,14 @@ export function App() {
       theme={theme}
       onToggleTheme={() => setTheme(toggleTheme(theme))}
       notice={notice}
+      runs={history}
+      activeRunId={run.runId}
+      onOpenRun={(id) => void openRun(id)}
     >
       {screen === "run" ? (
         <div className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-auto p-6">
-            <AgentTree view={run} />
+            <AgentTree view={run} onCancel={() => void abortRun()} />
           </div>
           <Composer
             value={draft}

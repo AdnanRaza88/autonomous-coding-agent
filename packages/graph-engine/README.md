@@ -8,11 +8,15 @@ Workers never talk to each other. Coordination lives here.
 
 ```ts
 createRun(userGoal, providerConfig, options?): Promise<string>
+cancelRun(runId, reason?): boolean
 getRunEvents(runId, after?): AsyncIterable<OrchestratorEvent>
-getRunState(runId): { spec, tasks, results }
+getRunState(runId): { spec, tasks, results, status }
+listRuns(): Array<{ id, status, createdAt, goal? }>
 ```
 
 `createRun` finishes spec generation and planning before it returns the run id. Execution continues in the background. Subscribe with `getRunEvents` (buffered from the first event, or from `after + 1` on reconnect) or poll `getRunState`.
+
+`cancelRun` marks the run aborted. The executor checks between batches and attempts, then emits `run_cancelled` and stops. Already-started workers finish their current call; queued work is dropped.
 
 ## Flow
 
@@ -21,10 +25,11 @@ getRunState(runId): { spec, tasks, results }
 3. Executor batches ready tasks (`Promise.all` inside a batch, batches in order). Fan-out is capped per batch.
 4. After each worker returns, a verifier scores the output against the spec and the original instructions only — not the production transcript. Failures retry with feedback appended, default 3 attempts.
 5. A failed task blocks its dependents; they are marked failed and skipped.
+6. `cancelRun` is cooperative. Status becomes `cancelled` instead of `complete`.
 
 ## Events
 
-`planning` → `plan_ready` → `agent_start` → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures also emit `error`.
+`planning` → `plan_ready` → `agent_start` → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`.
 
 Event indexes are zero-based and stable for the life of the run. Pass the last received index as `after` to skip frames already applied on the client.
 

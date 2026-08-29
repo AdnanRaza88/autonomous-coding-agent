@@ -12,6 +12,9 @@ listMcpTools(serverId)
 invokeMcpTool(serverId, toolName, args)
 
 requestPermission(action)
+listPermissionRules()
+removePermissionRule(id)
+clearSessionGrants()
 
 registerHook(point, name, fn)
 runHooks(point, context)
@@ -50,8 +53,11 @@ Same shape for built-in and user-added servers:
 
 - no handler + `risk: "low"` → allow
 - no handler + medium/high → deny
-- handler may return `true`, `false`, `"allow"`, `"deny"`, or `"allow_session"`
-- session and always-grants skip the next prompt for the same key
+- handler may return `true`, `false`, `allow`, `deny`, `allow_session`, `allow_always`, `allow_server`, or `deny_session`
+- matching rules skip the next prompt
+- `allow_server` grants every tool on that MCP server for the session
+- `allow_always` persists until `revokeGrants`
+- rules may carry `expiresAt`
 
 Tool calls, slash commands, and hooks all go through this function.
 

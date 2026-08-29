@@ -3,7 +3,10 @@ import { statusLabel, statusTone } from "../lib/status"
 import type { RunView } from "../state/events"
 import { StatusMark } from "./StatusMark"
 
-export function AgentTree(props: { view: RunView }) {
+export function AgentTree(props: {
+  view: RunView
+  onCancel?: () => void
+}) {
   const { view } = props
   if (view.phase === "idle") {
     return (
@@ -17,12 +20,20 @@ export function AgentTree(props: { view: RunView }) {
     )
   }
 
+  const live = view.phase === "planning" || view.phase === "running"
   const batches = topologicalBatches(view.tasks)
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-6">
-        <p className="font-mono text-xs uppercase tracking-wide text-muted">{view.phase}</p>
-        <h1 className="mt-1 text-xl font-medium">{view.goal || "Untitled run"}</h1>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-wide text-muted">{view.phase}</p>
+          <h1 className="mt-1 text-xl font-medium">{view.goal || "Untitled run"}</h1>
+        </div>
+        {live && props.onCancel ? (
+          <button className="rounded border border-line px-3 py-1.5 text-xs" onClick={props.onCancel}>
+            Cancel run
+          </button>
+        ) : null}
       </div>
       <div className="flex flex-col gap-6">
         {batches.map((batch, i) => (
