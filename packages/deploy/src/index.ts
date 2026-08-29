@@ -13,4 +13,6 @@ export { inspectCommand, parseCommand, defaultAllowlist, tokenize } from "./allo
 export { AuditLog } from "./audit.js"
 export { createApp, startServer, webDistGuess } from "./server.js"
 export type { ServerOptions, AppHandle } from "./server.js"
+export { registerControlPlane, resetControlPlaneState } from "./control-plane.js"
+export type { ControlPlaneOptions } from "./control-plane.js"
 export { resolveDataDir, dataLayout, DEFAULT_PORT, DEFAULT_DATA_DIR } from "./paths.js"

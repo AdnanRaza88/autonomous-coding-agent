@@ -126,6 +126,10 @@ export class ConfigStore {
     this.persist()
   }
 
+  getProvider(id: string): StoredProvider | undefined {
+    return this.doc.providers.find((p) => p.id === id)
+  }
+
   listProviders(): StoredProvider[] {
     return [...this.doc.providers]
   }
@@ -138,6 +142,14 @@ export class ConfigStore {
 
   listSubagents(): StoredSubagent[] {
     return [...this.doc.subagents]
+  }
+
+  deleteSubagent(id: string): boolean {
+    const before = this.doc.subagents.length
+    this.doc.subagents = this.doc.subagents.filter((s) => s.id !== id)
+    if (this.doc.subagents.length === before) return false
+    this.persist()
+    return true
   }
 
   upsertRun(row: StoredRun): void {
