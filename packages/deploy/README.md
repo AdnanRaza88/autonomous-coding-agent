@@ -18,6 +18,7 @@ The server hosts the control-plane HTTP contract used by `packages/web`:
 - `GET /api/memory/health`, `GET /api/memory/context`, `GET/POST /api/memory/facts`
 - `GET/POST /api/vault/notes`, `GET /api/vault/graph`, `GET /api/vault/notes/:id/backlinks`
 - `GET /api/deploy/targets`, `GET /api/deploy/detect`, `POST /api/deploy/credentials`, `POST /api/deploy`
+- `GET /api/deploy/events` Server-Sent Events of deploy progress (`after` / `Last-Event-ID`, optional `runId`)
 
 Memory defaults to the in-process local layer. Set `AGENT_CORE_MEMORY_MODE=http` to talk to AutoMem and Graphiti. Vault files live under `$AGENT_CORE_DATA/vault` and stay Obsidian-compatible.
 

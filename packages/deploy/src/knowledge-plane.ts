@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { SharedSpec } from "@agent-core/types"
 import { getRecord } from "@agent-core/graph-engine"
 import {
@@ -18,13 +18,17 @@ import {
   DeployError,
   detectProjectKind,
   deployProject,
+  listDeployProgress,
   listDeployTargets,
   listRunBindings,
+  onDeployProgress,
   registerRun,
+  resetProgressListeners,
   resetRunBindings,
   setTargetCredentials,
 } from "@agent-core/deploy-target"
 import type { Runtime } from "./bootstrap.js"
+import { formatSse, parseEventCursor, SSE_HEADERS } from "./sse.js"
 
 export type KnowledgePlane = {
   memory: MemoryLayer
@@ -193,6 +197,31 @@ export async function registerKnowledgePlane(
     return { targetId, hasToken: true }
   })
 
+  app.get<{ Querystring: { runId?: string; after?: string } }>("/api/deploy/events", async (req, reply) => {
+    const runId = req.query.runId?.trim()
+    const headerId = Array.isArray(req.headers["last-event-id"])
+      ? req.headers["last-event-id"][0]
+      : req.headers["last-event-id"]
+    let after = Math.max(parseEventCursor(req.query.after), parseEventCursor(headerId))
+    openSse(reply)
+    for (const row of listDeployProgress(runId, after)) {
+      after = row.id
+      reply.raw.write(formatSse("deploy", { channel: "deploy", event: row }, row.id))
+    }
+    const send = (event: ReturnType<typeof listDeployProgress>[number]) => {
+      if (runId && event.runId !== runId) return
+      if (event.id <= after) return
+      after = event.id
+      try {
+        reply.raw.write(formatSse("deploy", { channel: "deploy", event }, event.id))
+      } catch {
+        unsub()
+      }
+    }
+    const unsub = onDeployProgress(send)
+    await waitUntilClosed(req, unsub)
+  })
+
   app.post<{
     Body: {
       runId?: string
@@ -267,4 +296,25 @@ export function resetKnowledgePlane(): void {
   resetMemoryLayer()
   setActiveVault(undefined)
   resetRunBindings()
+  resetProgressListeners()
+}
+
+function openSse(reply: FastifyReply): void {
+  reply.hijack()
+  reply.raw.writeHead(200, SSE_HEADERS)
+  reply.raw.write(": connected\n\n")
+}
+
+function waitUntilClosed(req: FastifyRequest, onClose: () => void): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => {
+      onClose()
+      resolve()
+    }
+    if (req.raw.destroyed) {
+      finish()
+      return
+    }
+    req.raw.once("close", finish)
+  })
 }

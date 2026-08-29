@@ -108,3 +108,12 @@ export interface IdeHostOptions extends ServeManagerOptions {
   proxyPort?: number
   workspace?: string
 }
+
+export interface DeployProgressView {
+  id?: number
+  runId: string
+  targetId: string
+  phase: "queued" | "building" | "deploying" | "live" | "failed"
+  message: string
+  url?: string
+}

@@ -6,9 +6,29 @@ import { DiffBridge } from "./diff.js"
 import { extensionManifest, sidebarHtml } from "./contributions.js"
 import { IdeShellError } from "./errors.js"
 import { cancelIdeRun, watchIdeRun, type LiveHandle } from "./live.js"
+import {
+  deployRun,
+  detectDeploy,
+  fetchDeployTargets,
+  fetchMemoryHealth,
+  fetchVaultGraph,
+  fetchVaultNotes,
+  watchIdeDeploy,
+  type DeployResultInfo,
+  type DetectedProjectInfo,
+  type MemoryHealth,
+  type PlaneHandle,
+  type VaultGraphSnapshot,
+} from "./plane.js"
 import { DEFAULT_PROXY_PORT } from "./ports.js"
 import { encodeWorkspaceKey } from "./workspace.js"
-import type { AgentServeHandle, IdeHostOptions, SidebarTarget, StatusSnapshot } from "./types.js"
+import type {
+  AgentServeHandle,
+  DeployProgressView,
+  IdeHostOptions,
+  SidebarTarget,
+  StatusSnapshot,
+} from "./types.js"
 
 export interface IdeHost {
   serve: AgentServeHandle
@@ -18,7 +38,19 @@ export interface IdeHost {
   manifest: Record<string, unknown>
   html: string
   watchRun: (runId: string, onStatus: (status: StatusSnapshot) => void) => LiveHandle
+  watchDeploy: (runId: string, onProgress: (event: DeployProgressView) => void) => PlaneHandle
   cancelRun: (runId?: string) => Promise<{ runId: string; cancelled: boolean; status?: string }>
+  memoryHealth: () => Promise<MemoryHealth>
+  vaultGraph: () => Promise<VaultGraphSnapshot>
+  vaultNotes: () => Promise<{ id: string; title: string }[]>
+  deployTargets: () => Promise<{ id: string; kind: "static" | "container" }[]>
+  detectDeploy: (runId: string) => Promise<DetectedProjectInfo>
+  deployRun: (body: {
+    runId: string
+    targetId?: string
+    token?: string
+    projectName?: string
+  }) => Promise<DeployResultInfo>
   activeRunId: () => string | undefined
   stop: () => Promise<void>
 }
@@ -49,7 +81,9 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
   const iframeUrl = proxy.iframeUrl(workspace)
   const diffs = new DiffBridge()
   const live: LiveHandle[] = []
+  const deployWatches: PlaneHandle[] = []
   let activeRunId: string | undefined
+  const origin = () => serve.endpoints.origin
   return {
     serve,
     proxy,
@@ -77,6 +111,21 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
       return handle
     },
     activeRunId: () => activeRunId,
+    watchDeploy(runId, onProgress) {
+      const handle = watchIdeDeploy({
+        origin: origin(),
+        runId,
+        onProgress,
+      })
+      deployWatches.push(handle)
+      return handle
+    },
+    memoryHealth: () => fetchMemoryHealth(origin()),
+    vaultGraph: () => fetchVaultGraph(origin()),
+    vaultNotes: () => fetchVaultNotes(origin()),
+    deployTargets: () => fetchDeployTargets(origin()),
+    detectDeploy: (runId) => detectDeploy(origin(), runId),
+    deployRun: (body) => deployRun(origin(), body),
     async cancelRun(runId) {
       const id = runId ?? activeRunId
       if (!id) throw new IdeShellError("no_run", "no active run to cancel")
@@ -84,6 +133,7 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
     },
     stop: async () => {
       for (const handle of live) handle.close()
+      for (const handle of deployWatches) handle.close()
       await proxy.close()
       await serve.stop()
     },

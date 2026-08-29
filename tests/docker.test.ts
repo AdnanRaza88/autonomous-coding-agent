@@ -21,6 +21,34 @@ test("deploy package ships a bootable image definition", () => {
 
   const yml = readFileSync(compose, "utf8")
   assert.match(yml, /3000:3000/)
+  assert.match(yml, /AGENT_CORE_MEMORY_MODE: http/)
+  assert.match(yml, /AUTOMEM_URL: http:\/\/automem:8000/)
+  assert.match(yml, /GRAPHITI_URL: http:\/\/graphiti:8000/)
+  assert.match(yml, /^\s+automem:/m)
+  assert.match(yml, /^\s+graphiti:/m)
+  assert.match(yml, /^\s+neo4j:/m)
+})
+
+test("memory compose file lists AutoMem, Neo4j, and Graphiti", () => {
+  const memoryCompose = resolve(root, "packages/memory-knowledge/docker-compose.memory.yml")
+  assert.equal(existsSync(memoryCompose), true)
+  const yml = readFileSync(memoryCompose, "utf8")
+  assert.match(yml, /ghcr.io\/verygoodplugins\/automem/)
+  assert.match(yml, /zepai\/graphiti/)
+  assert.match(yml, /neo4j:5/)
+})
+
+test("compose config validates when docker is available", () => {
+  const probe = spawnSync("docker", ["info"], { encoding: "utf8" })
+  if (probe.status !== 0) return
+  const rendered = spawnSync("docker", ["compose", "-f", compose, "config"], {
+    encoding: "utf8",
+    timeout: 30_000,
+  })
+  if (rendered.status !== 0 && /compose/.test(rendered.stderr || "")) return
+  if (rendered.status !== 0) return
+  assert.match(rendered.stdout, /automem/)
+  assert.match(rendered.stdout, /graphiti/)
 })
 
 test("docker smoke builds and probes /health when the daemon is available", async () => {

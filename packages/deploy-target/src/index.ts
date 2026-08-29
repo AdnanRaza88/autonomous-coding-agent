@@ -18,7 +18,13 @@ export type {
 export { registerDeployTarget, getDeployTarget, listDeployTargets, resetDeployTargets } from "./registry.js"
 export { deployProject, pickDefaultTarget } from "./deploy.js"
 export { registerRun, getRunBinding, rememberRemote, listRunBindings, resetRunBindings } from "./store.js"
-export { onDeployProgress, emitProgress, resetProgressListeners } from "./progress.js"
+export {
+  onDeployProgress,
+  emitProgress,
+  listDeployProgress,
+  resetProgressListeners,
+} from "./progress.js"
+export type { LoggedDeployProgress } from "./progress.js"
 export { setTargetCredentials, getTargetCredentials, clearTargetCredentials, mergeConfig } from "./config.js"
 export { detectProjectKind } from "./detect.js"
 export { createVercelTarget } from "./vercel.js"
