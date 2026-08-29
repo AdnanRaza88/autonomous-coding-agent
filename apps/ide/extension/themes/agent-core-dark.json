@@ -1,0 +1,26 @@
+{
+  "name": "Agent Core Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#16151C",
+    "editor.foreground": "#E8E6F0",
+    "editor.lineHighlightBackground": "#221F2C",
+    "editor.selectionBackground": "#3A3454",
+    "sideBar.background": "#121118",
+    "sideBar.foreground": "#E8E6F0",
+    "statusBar.background": "#1C1B24",
+    "statusBar.foreground": "#E8E6F0",
+    "activityBar.background": "#121118",
+    "activityBar.foreground": "#8B82C9",
+    "titleBar.activeBackground": "#121118",
+    "focusBorder": "#8B82C9",
+    "button.background": "#8B82C9",
+    "button.foreground": "#16151C",
+    "list.activeSelectionBackground": "#2A2640"
+  },
+  "tokenColors": [
+    { "scope": ["comment"], "settings": { "foreground": "#8A849C" } },
+    { "scope": ["keyword", "storage.type"], "settings": { "foreground": "#8B82C9" } },
+    { "scope": ["string"], "settings": { "foreground": "#8FAE96" } }
+  ]
+}

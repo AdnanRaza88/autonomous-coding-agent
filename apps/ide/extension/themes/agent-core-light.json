@@ -1,0 +1,26 @@
+{
+  "name": "Agent Core Light",
+  "type": "light",
+  "colors": {
+    "editor.background": "#F4F3F8",
+    "editor.foreground": "#1C1B22",
+    "editor.lineHighlightBackground": "#E4E0F2",
+    "editor.selectionBackground": "#C9C2E8",
+    "sideBar.background": "#ECEAF3",
+    "sideBar.foreground": "#1C1B22",
+    "statusBar.background": "#E4E1EE",
+    "statusBar.foreground": "#1C1B22",
+    "activityBar.background": "#E4E1EE",
+    "activityBar.foreground": "#5B4FA8",
+    "titleBar.activeBackground": "#ECEAF3",
+    "focusBorder": "#5B4FA8",
+    "button.background": "#5B4FA8",
+    "button.foreground": "#F4F3F8",
+    "list.activeSelectionBackground": "#D8D2EC"
+  },
+  "tokenColors": [
+    { "scope": ["comment"], "settings": { "foreground": "#6B6680" } },
+    { "scope": ["keyword", "storage.type"], "settings": { "foreground": "#5B4FA8" } },
+    { "scope": ["string"], "settings": { "foreground": "#3F6B4A" } }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "agent-core-ide",
+  "displayName": "Agent Core",
+  "description": "Additive Code-OSS sidebar: loopback SPA iframe, slash commands, native diff accept/reject.",
+  "publisher": "agent-core",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onView:agentCore.sidebar"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agent-core",
+          "title": "Agent Core",
+          "icon": "media/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "agent-core": [
+        {
+          "type": "webview",
+          "id": "agentCore.sidebar",
+          "name": "Agent"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "id": "agent-core-light",
+        "label": "Agent Core Light",
+        "uiTheme": "vs",
+        "path": "./themes/agent-core-light.json"
+      },
+      {
+        "id": "agent-core-dark",
+        "label": "Agent Core Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/agent-core-dark.json"
+      }
+    ]
+  }
+}
