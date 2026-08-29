@@ -10,7 +10,7 @@ The host consumes the same live contract as the web client: `GET /api/runs/:id` 
 
 ```
 apps/ide
-  src/                 runtime (manager, proxy, diff, status, live, contributions)
+  src/                 runtime (manager, proxy, diff, status, live, contributions, plane)
   extension/           contribution points + themes consumed by a Code-OSS fork
 ```
 
@@ -20,6 +20,8 @@ Nothing here patches `src/vs/editor`, the extension host, or LSP. Upstream pulls
 
 - `createIdeHost(opts)` — spawn backend, bind proxy, return sidebar iframe URL
 - `host.watchRun(runId, onStatus)` — hydrate + SSE into `StatusSnapshot`
+- `host.watchDeploy(runId, onProgress)` — same contract as `GET /api/deploy/events`
+- `host.memoryHealth()`, `host.vaultGraph()`, `host.deployTargets()`, `host.detectDeploy()`, `host.deployRun()` — IDE host surfaces for the knowledge and deploy planes
 - `AgentServeManager` — child-process lifecycle, health probe, port recovery, loopback-only
 - `startSpaProxy` — serve `packages/web` dist and reverse-proxy `/api` to the backend
 - `DiffBridge` — two-buffer proposal that a host opens with the stock diff editor; `accept` / `reject`
