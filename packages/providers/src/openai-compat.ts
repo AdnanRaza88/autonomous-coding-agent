@@ -9,6 +9,7 @@ import {
   resolveMaxTokens,
   type ChatRequestOptions,
 } from "./http.js"
+import { estimateMessageUsage, parseUsage, type ChatTurn } from "./usage.js"
 
 export function createOpenAICompatibleAdapter(): ProviderAdapter {
   return {
@@ -23,6 +24,14 @@ export async function chatCompletions(
   messages: ChatMessage[],
   opts: ChatRequestOptions = {}
 ): Promise<string> {
+  return (await chatCompletionsDetailed(config, messages, opts)).text
+}
+
+export async function chatCompletionsDetailed(
+  config: ProviderConfig,
+  messages: ChatMessage[],
+  opts: ChatRequestOptions = {}
+): Promise<ChatTurn> {
   const base = config.baseUrl.replace(/\/$/, "")
   const url = `${base}/chat/completions`
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -59,7 +68,12 @@ export async function chatCompletions(
       responseBody: text.slice(0, 2000),
     })
   }
-  return content
+  const parsed = parseUsage(data)
+  return {
+    text: content,
+    usage: parsed ?? estimateMessageUsage(messages, content),
+    estimated: !parsed,
+  }
 }
 
 export async function* streamCompletions(
