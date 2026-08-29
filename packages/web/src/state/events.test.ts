@@ -86,3 +86,28 @@ test("hydrateRun copies snapshot token totals", () => {
   assert.equal(view.inputTokens, 80)
   assert.equal(view.calls, 3)
 })
+
+test("agent_delta accumulates task drafts", () => {
+  let view = emptyRun()
+  view = reduceRun(view, {
+    type: "plan_ready",
+    tasks: [{ id: "a", title: "A", instructions: "", dependsOn: [], status: "queued" }],
+  })
+  view = reduceRun(view, { type: "agent_delta", taskId: "a", text: "hel" })
+  view = reduceRun(view, { type: "agent_delta", taskId: "a", text: "lo" })
+  assert.equal(view.drafts.a, "hello")
+  view = reduceRun(view, { type: "agent_delta", taskId: "a", text: "hello world" })
+  assert.equal(view.drafts.a, "hello world")
+})
+
+test("agent_verify stores reviewer notes", () => {
+  let view = emptyRun()
+  view = reduceRun(view, {
+    type: "agent_verify",
+    taskId: "a",
+    attempt: 1,
+    pass: true,
+    feedback: "looks good",
+  })
+  assert.equal(view.notes.a, "looks good")
+})
