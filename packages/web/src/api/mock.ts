@@ -449,6 +449,7 @@ async function simulateRun(
           feedback: "checks passed",
         })
         const output = `${node.title} complete`
+        emit({ type: "agent_delta", taskId: node.id, text: output })
         emit({ type: "agent_done", taskId: node.id, output })
         results.push({ taskId: node.id, output, attempt: 1, passed: true })
       }),
@@ -479,6 +480,9 @@ export function applyEvent(snap: RunSnapshot, event: OrchestratorEvent): void {
   }
   if (event.type === "agent_done") {
     patchTask(snap, event.taskId, "passed")
+    return
+  }
+  if (event.type === "agent_delta") {
     return
   }
   if (event.type === "usage") {
