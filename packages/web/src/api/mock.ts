@@ -186,9 +186,13 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       return { pending: [...prompts.values()] }
     },
     async decidePermission(id, decision) {
-      const prompt = prompts.get(id)
+      const prompt = prompts.get(id) ?? {
+        id,
+        kind: "mcp_tool",
+        action: id,
+        risk: "high",
+      }
       prompts.delete(id)
-      if (!prompt) return
       if (decision === "allow_always") {
         rules.set(`rule_${id}`, {
           id: `rule_${id}`,
