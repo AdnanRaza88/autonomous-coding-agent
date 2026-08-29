@@ -32,6 +32,7 @@ export type CreateRunOptions = {
   verify?: Verifier
   maxRetries?: number
   maxBatch?: number
+  onDelta?: (taskId: string, text: string) => void
 }
 
 export function resolveChat(
@@ -50,6 +51,7 @@ export function resolveRunner(options?: CreateRunOptions): TaskRunner {
       adapter: options?.adapter,
       attempt,
       definitionId,
+      onDelta: options?.onDelta ? (text) => options.onDelta!(task.id, text) : undefined,
     })
   }
 }

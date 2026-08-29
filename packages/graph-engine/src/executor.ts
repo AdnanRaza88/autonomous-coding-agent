@@ -30,7 +30,13 @@ export async function executeRun(
 ): Promise<void> {
   const rec = requireRecord(runId)
   markRunning(runId)
-  const runner = resolveRunner(options)
+  const runner = resolveRunner({
+    ...options,
+    onDelta: (taskId, text) => {
+      if (text) pushEvent(runId, { type: "agent_delta", taskId, text })
+      options?.onDelta?.(taskId, text)
+    },
+  })
   const maxRetries = clampRetries(options?.maxRetries)
   const maxBatch = Math.max(1, options?.maxBatch ?? 8)
   const verify = options?.verify ?? defaultVerifier(chat)

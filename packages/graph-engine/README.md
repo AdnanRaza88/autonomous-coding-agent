@@ -29,7 +29,7 @@ listRuns(): Array<{ id, status, createdAt, goal?, usage? }>
 
 ## Events
 
-`planning` → `usage` (after each metered provider call) → `plan_ready` → `agent_start` → `agent_delta` (worker draft) → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`. `usage` frames carry cumulative input/output/call totals for the run. `agent_delta` carries the latest worker text so the UI can render a live transcript before verification finishes.
+`planning` → `usage` (after each metered provider call) → `plan_ready` → `agent_start` → `agent_delta` (worker draft) → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`. `usage` frames carry cumulative input/output/call totals for the run. `agent_delta` carries worker text as it arrives. OpenAI-compatible providers stream token chunks through `streamChat`; other providers and injected adapters emit one frame with the full reply. A snapshot frame with the complete output is also published before verify.
 
 Event indexes are zero-based and stable for the life of the run. Pass the last received index as `after` to skip frames already applied on the client.
 
@@ -45,4 +45,4 @@ Tests inject a fake `chat` / `runTask` / `verify` so they do not hit a network.
 
 ## Options (tests and later modules)
 
-`adapter`, `chat`, `runTask`, `verify`, `maxRetries`, `maxBatch`. Production callers can omit all of them; the engine uses `@agent-core/providers` and `runSubagent` from `@agent-core/subagents`.
+`adapter`, `chat`, `runTask`, `verify`, `maxRetries`, `maxBatch`, `onDelta`. Production callers can omit all of them; the engine uses `@agent-core/providers` and `runSubagent` from `@agent-core/subagents`.
