@@ -55,7 +55,7 @@ Uses the in-package mock API and event bus.
 ### Full stack with memory services
 
 docker compose -f packages/memory-knowledge/docker-compose.memory.yml up -d
-npm start -w @agent-core/deploy
+AGENT_CORE_MEMORY_MODE=http npm start -w @agent-core/deploy
 
 Environment variables for the memory layer:
 
@@ -65,7 +65,7 @@ Environment variables for the memory layer:
 | AUTOMEM_API_TOKEN | unset |
 | GRAPHITI_API_URL | http://127.0.0.1:8001 |
 | GRAPHITI_GROUP_ID | agent-core |
-| AGENT_CORE_MEMORY_MODE | http (local for offline / tests) |
+| AGENT_CORE_MEMORY_MODE | local (set http to use AutoMem + Graphiti) |
 
 A downed memory service never blocks a run; recall falls back to empty context.
 
@@ -122,6 +122,14 @@ Each runSubagent call receives a fresh history and a frozen SharedSpec. Concurre
 | GET | /api/commands | Slash command catalog |
 | POST | /api/commands/:name | Execute a slash command |
 | GET/POST | /api/mcp/servers | MCP server configs |
+| GET | /api/memory/health | AutoMem + Graphiti health |
+| GET | /api/memory/context | Project recall for a query |
+| GET/POST | /api/memory/facts | List or add graph facts |
+| GET/POST | /api/vault/notes | Obsidian vault notes |
+| GET | /api/vault/graph | Wiki-link graph |
+| GET | /api/deploy/targets | Registered deploy adapters |
+| GET | /api/deploy/detect | Project kind from a run |
+| POST | /api/deploy | Deploy a bound run workspace |
 
 ## IDE shell
 
@@ -134,6 +142,7 @@ apps/ide provides an additive host for Code-OSS: loopback SPA proxy, diff accept
 - Shared types are the only cross-package contracts.
 - Permission always-grants persist to permissions.json via the file-backed store.
 - Live event streams support reconnect via SSE id and Last-Event-ID / ?after.
+- Memory, vault, and deploy adapters are wired on the boot server. Completed runs are recorded into memory when the layer is available.
 
 ## License
 
