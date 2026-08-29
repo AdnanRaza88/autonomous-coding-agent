@@ -280,8 +280,8 @@ export function App() {
       onOpenRun={(id) => void openRun(id)}
     >
       {screen === "run" ? (
-        <div className="flex h-full min-h-0 flex-col">
-          <div className="min-h-0 flex-1 overflow-auto p-6">
+        <div className="relative flex h-full min-h-0 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <AgentTree view={run} onCancel={() => void abortRun()} />
           </div>
           <Composer
@@ -314,88 +314,96 @@ export function App() {
       ) : null}
 
       {screen === "agents" ? (
-        <SubagentBuilder
-          items={agents}
-          onSave={async (item) => {
-            const savedItem = await api.upsertSubagent(item)
-            setAgents(await api.listSubagents())
-            setNotice(`saved ${savedItem.id}`)
-          }}
-          onDelete={async (id) => {
-            await api.deleteSubagent(id)
-            setAgents(await api.listSubagents())
-          }}
-        />
+        <div className="h-full overflow-y-auto">
+          <SubagentBuilder
+            items={agents}
+            onSave={async (item) => {
+              const savedItem = await api.upsertSubagent(item)
+              setAgents(await api.listSubagents())
+              setNotice(`saved ${savedItem.id}`)
+            }}
+            onDelete={async (id) => {
+              await api.deleteSubagent(id)
+              setAgents(await api.listSubagents())
+            }}
+          />
+        </div>
       ) : null}
 
       {screen === "knowledge" ? (
-        <Knowledge
-          health={health}
-          facts={facts}
-          notes={notes}
-          graph={graph}
-          onSearch={(q) => api.memoryContext(q)}
-          onAddFact={async (statement) => {
-            await api.addFact({ statement })
-            await refreshKnowledge()
-          }}
-          onOpenNote={(id) => api.readVaultNote(id)}
-          onSaveNote={async (body) => {
-            await api.writeVaultNote(body)
-            await refreshKnowledge()
-          }}
-        />
+        <div className="h-full overflow-y-auto">
+          <Knowledge
+            health={health}
+            facts={facts}
+            notes={notes}
+            graph={graph}
+            onSearch={(q) => api.memoryContext(q)}
+            onAddFact={async (statement) => {
+              await api.addFact({ statement })
+              await refreshKnowledge()
+            }}
+            onOpenNote={(id) => api.readVaultNote(id)}
+            onSaveNote={async (body) => {
+              await api.writeVaultNote(body)
+              await refreshKnowledge()
+            }}
+          />
+        </div>
       ) : null}
 
       {screen === "deploy" ? (
-        <DeployPanel
-          runId={run.runId}
-          goal={run.goal}
-          targets={targets}
-          bindings={bindings}
-          detected={detected}
-          last={lastDeploy}
-          onDetect={async (runId) => {
-            setDetected(await api.detectDeploy(runId))
-            await refreshDeploy()
-          }}
-          onSaveToken={async (body) => {
-            const stored = await api.saveDeployCredentials(body)
-            setNotice(`token stored for ${stored.targetId}`)
-          }}
-          onDeploy={async (body) => {
-            const result = await api.deployRun(body)
-            setLastDeploy(result)
-            setNotice(result.status === "live" ? result.url : result.message ?? "deploy failed")
-            await refreshDeploy()
-          }}
-        />
+        <div className="h-full overflow-y-auto">
+          <DeployPanel
+            runId={run.runId}
+            goal={run.goal}
+            targets={targets}
+            bindings={bindings}
+            detected={detected}
+            last={lastDeploy}
+            onDetect={async (runId) => {
+              setDetected(await api.detectDeploy(runId))
+              await refreshDeploy()
+            }}
+            onSaveToken={async (body) => {
+              const stored = await api.saveDeployCredentials(body)
+              setNotice(`token stored for ${stored.targetId}`)
+            }}
+            onDeploy={async (body) => {
+              const result = await api.deployRun(body)
+              setLastDeploy(result)
+              setNotice(result.status === "live" ? result.url : result.message ?? "deploy failed")
+              await refreshDeploy()
+            }}
+          />
+        </div>
       ) : null}
 
       {screen === "settings" ? (
-        <Settings
-          providers={providers}
-          saved={saved}
-          servers={servers}
-          rules={rules}
-          onSaveProvider={async (body) => {
-            const record = await api.saveProvider(body)
-            setSaved(await api.listSavedProviders())
-            setNotice(`provider ${record.id} stored`)
-          }}
-          onConnectServer={async (body) => {
-            await api.connectMcpServer(body)
-            setServers(await api.listMcpServers())
-          }}
-          onRevokeRule={async (id) => {
-            await api.removePermissionRule(id)
-            await refreshRules()
-          }}
-          onClearSession={async () => {
-            await api.clearPermissionSession()
-            await refreshRules()
-          }}
-        />
+        <div className="h-full overflow-y-auto">
+          <Settings
+            providers={providers}
+            saved={saved}
+            servers={servers}
+            rules={rules}
+            onSaveProvider={async (body) => {
+              const record = await api.saveProvider(body)
+              setSaved(await api.listSavedProviders())
+              setNotice(`provider ${record.id} stored`)
+            }}
+            onConnectServer={async (body) => {
+              await api.connectMcpServer(body)
+              setServers(await api.listMcpServers())
+            }}
+            onRevokeRule={async (id) => {
+              await api.removePermissionRule(id)
+              await refreshRules()
+            }}
+            onClearSession={async () => {
+              await api.clearPermissionSession()
+              await refreshRules()
+            }}
+          />
+        </div>
       ) : null}
 
       {prompt ? (
