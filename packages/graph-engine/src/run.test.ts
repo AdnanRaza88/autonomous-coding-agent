@@ -23,7 +23,7 @@ function chatScript(replies: Record<string, string>): (c: ProviderConfig, m: Cha
   return async (_c, messages) => {
     const blob = messages.map((m) => m.content).join("\n")
     if (blob.includes("You write a SharedSpec")) {
-      return replies.spec ?? `{"goal":"ship a cli","constraints":{"language":"TypeScript"},"styleGuide":{"theme":"light"}}`
+      return replies.spec ?? `{\"goal\":\"ship a cli\",\"constraints\":{\"language\":\"TypeScript\"},\"styleGuide\":{\"theme\":\"light\"}}`
     }
     if (blob.includes("You are the planner")) {
       return replies.plan ?? JSON.stringify({
@@ -46,7 +46,7 @@ function chatScript(replies: Record<string, string>): (c: ProviderConfig, m: Cha
       })
     }
     if (blob.includes("You are a black-box verifier")) {
-      return replies.verify ?? `{"pass":true,"feedback":"ok"}`
+      return replies.verify ?? `{\"pass\":true,\"feedback\":\"ok\"}`
     }
     return replies.default ?? "done"
   }
@@ -148,14 +148,15 @@ test("getRunEvents yields every state transition", async () => {
   for await (const event of getRunEvents(runId)) {
     types.push(event.type)
   }
-  assert.deepEqual(types, [
-    "planning",
-    "plan_ready",
-    "agent_start",
-    "agent_verify",
-    "agent_done",
-    "run_complete",
-  ])
+  assert.ok(types.includes("usage"))
+  assert.deepEqual(
+    types.filter((t) => t !== "usage"),
+    ["planning", "plan_ready", "agent_start", "agent_verify", "agent_done", "run_complete"],
+  )
+  const state = getRunState(runId)
+  assert.ok(state.usage.calls >= 2)
+  assert.ok(state.usage.inputTokens > 0)
+  assert.ok(state.usage.outputTokens > 0)
 })
 
 test("getRunEvents after a cursor skips already seen frames", async () => {
@@ -175,11 +176,18 @@ test("getRunEvents after a cursor skips already seen frames", async () => {
     }),
   })
   await waitForRun(runId)
+  const all: OrchestratorEvent["type"][] = []
+  for await (const event of getRunEvents(runId)) all.push(event.type)
+  const readyAt = all.indexOf("plan_ready")
+  assert.ok(readyAt >= 0)
   const rest: OrchestratorEvent["type"][] = []
-  for await (const event of getRunEvents(runId, 1)) {
+  for await (const event of getRunEvents(runId, readyAt)) {
     rest.push(event.type)
   }
-  assert.deepEqual(rest, ["agent_start", "agent_verify", "agent_done", "run_complete"])
+  assert.deepEqual(
+    rest.filter((t) => t !== "usage"),
+    ["agent_start", "agent_verify", "agent_done", "run_complete"],
+  )
 })
 
 test("same SharedSpec object is passed to every worker", async () => {
