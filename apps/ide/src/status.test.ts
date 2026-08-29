@@ -51,3 +51,9 @@ test("usage events append token totals to the bar", () => {
   assert.equal(snap.inputTokens, 800)
   assert.match(statusBarText(snap), /1\.0k tok/)
 })
+
+test("agent_delta keeps the bar on the writing task", () => {
+  let snap = emptyStatus()
+  snap = foldEvent(snap, { type: "agent_delta", taskId: "t1", text: "draft" })
+  assert.equal(snap.label, "Writing t1")
+})

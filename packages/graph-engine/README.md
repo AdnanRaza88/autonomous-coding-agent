@@ -29,7 +29,7 @@ listRuns(): Array<{ id, status, createdAt, goal?, usage? }>
 
 ## Events
 
-`planning` → `usage` (after each metered provider call) → `plan_ready` → `agent_start` → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`. `usage` frames carry cumulative input/output/call totals for the run.
+`planning` → `usage` (after each metered provider call) → `plan_ready` → `agent_start` → `agent_delta` (worker draft) → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`. `usage` frames carry cumulative input/output/call totals for the run. `agent_delta` carries the latest worker text so the UI can render a live transcript before verification finishes.
 
 Event indexes are zero-based and stable for the life of the run. Pass the last received index as `after` to skip frames already applied on the client.
 

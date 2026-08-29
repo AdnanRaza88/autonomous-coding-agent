@@ -130,6 +130,9 @@ async function runWithVerify(
     }
 
     assertActive(runId)
+    if (result.output) {
+      pushEvent(runId, { type: "agent_delta", taskId: task.id, text: result.output })
+    }
     updateTask(runId, task.id, { status: "verifying" })
     const verdict = await verify(task, spec, result.output, config)
     pushEvent(runId, {

@@ -2,7 +2,7 @@
 
 Local-first coding agent platform. TypeScript monorepo.
 
-Agent Core runs parallel specialized subagents against a shared project specification, streams live progress over Server-Sent Events, gates MCP tool use behind a permission model, and ships as a single Docker image with an optional Code-OSS sidebar host.
+Agent Core runs parallel specialized subagents against a shared project specification, streams live progress and task drafts over Server-Sent Events, gates MCP tool use behind a permission model, and ships as a single Docker image with an optional Code-OSS sidebar host.
 
 All numbered modules (00-12) are on main. The boot server implements the full web control-plane contract. Production UI builds talk to that HTTP API; npm run dev in the web package still uses the in-package mock bus for isolated frontend work.
 
