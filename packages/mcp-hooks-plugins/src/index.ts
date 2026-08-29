@@ -35,13 +35,17 @@ export {
   grantServerSession,
   grantSession,
   listPermissionRules,
+  loadPersistedRules,
   matchRule,
   permissionKey,
   removePermissionRule,
   requestPermission,
   revokeGrants,
   setPermissionHandler,
+  setPermissionStore,
 } from "./permission.js"
+export { filePermissionStore } from "./persist.js"
+export type { PermissionStore } from "./persist.js"
 export type {
   HookContext,
   HookFn,
