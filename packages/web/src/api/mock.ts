@@ -55,7 +55,7 @@ const modelsByProvider: Record<string, ProviderModel[]> = {
   openai: [{ id: "gpt-4.1", name: "GPT-4.1", contextWindow: 1048576 }],
   openrouter: [{ id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", contextWindow: 200000 }],
   ollama: [{ id: "qwen2.5-coder:7b", name: "Qwen2.5 Coder 7B", contextWindow: 32768 }],
-]
+}
 
 const defaultCommands: SlashCommandInfo[] = [
   { name: "help", description: "List slash commands", risk: "low" },
