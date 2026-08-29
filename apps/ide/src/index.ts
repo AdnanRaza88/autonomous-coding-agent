@@ -13,6 +13,8 @@ export {
 } from "./commands.js"
 export { emptyStatus, foldEvent, statusBarText, statusFromTasks } from "./status.js"
 export {
+  cancelIdeRun,
+  cancelRunUrl,
   fetchRunSnapshot,
   permissionEventsUrl,
   runEventsUrl,

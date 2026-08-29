@@ -18,6 +18,7 @@ test("exposes more than fifty slash commands for the palette", () => {
 test("command contributions include host actions and slashes", () => {
   const contrib = vscodeCommandContributions()
   assert.ok(contrib.some((c) => c.command === "agent-core.acceptDiff"))
+  assert.ok(contrib.some((c) => c.command === "agent-core.cancelRun"))
   assert.ok(contrib.some((c) => c.command === "agent-core.slash.commit"))
   assert.ok(contrib.every((c) => c.category === "Agent Core"))
 })

@@ -5,7 +5,7 @@ import { startSpaProxy, type SpaProxyHandle } from "./spa-proxy.js"
 import { DiffBridge } from "./diff.js"
 import { extensionManifest, sidebarHtml } from "./contributions.js"
 import { IdeShellError } from "./errors.js"
-import { watchIdeRun, type LiveHandle } from "./live.js"
+import { cancelIdeRun, watchIdeRun, type LiveHandle } from "./live.js"
 import { DEFAULT_PROXY_PORT } from "./ports.js"
 import { encodeWorkspaceKey } from "./workspace.js"
 import type { AgentServeHandle, IdeHostOptions, SidebarTarget, StatusSnapshot } from "./types.js"
@@ -18,6 +18,8 @@ export interface IdeHost {
   manifest: Record<string, unknown>
   html: string
   watchRun: (runId: string, onStatus: (status: StatusSnapshot) => void) => LiveHandle
+  cancelRun: (runId?: string) => Promise<{ runId: string; cancelled: boolean; status?: string }>
+  activeRunId: () => string | undefined
   stop: () => Promise<void>
 }
 
@@ -47,6 +49,7 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
   const iframeUrl = proxy.iframeUrl(workspace)
   const diffs = new DiffBridge()
   const live: LiveHandle[] = []
+  let activeRunId: string | undefined
   return {
     serve,
     proxy,
@@ -59,13 +62,25 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
     manifest: extensionManifest(),
     html: sidebarHtml(iframeUrl),
     watchRun(runId, onStatus) {
+      activeRunId = runId
       const handle = watchIdeRun({
         origin: serve.endpoints.origin,
         runId,
-        onStatus,
+        onStatus: (status) => {
+          if (status.phase === "done" || status.phase === "error") {
+            if (activeRunId === runId) activeRunId = undefined
+          }
+          onStatus(status)
+        },
       })
       live.push(handle)
       return handle
+    },
+    activeRunId: () => activeRunId,
+    async cancelRun(runId) {
+      const id = runId ?? activeRunId
+      if (!id) throw new IdeShellError("no_run", "no active run to cancel")
+      return cancelIdeRun(serve.endpoints.origin, id)
     },
     stop: async () => {
       for (const handle of live) handle.close()
