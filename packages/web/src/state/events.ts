@@ -3,7 +3,7 @@ import type { RunSnapshot } from "../api/contract.js"
 
 export interface RunView {
   runId: string | null
-  phase: "idle" | "planning" | "running" | "complete" | "error"
+  phase: "idle" | "planning" | "running" | "complete" | "error" | "cancelled"
   goal: string
   tasks: AgentTask[]
   results: AgentResult[]
@@ -64,6 +64,14 @@ export function reduceRun(view: RunView, event: OrchestratorEvent): RunView {
       log: [...view.log, "complete"],
     }
   }
+  if (event.type === "run_cancelled") {
+    return {
+      ...next,
+      phase: "cancelled",
+      error: event.reason,
+      log: [...view.log, `cancelled ${event.reason}`],
+    }
+  }
   return {
     ...next,
     phase: "error",
@@ -81,7 +89,8 @@ export function hydrateRun(snapshot: RunSnapshot & { goal?: string }): RunView {
   for (const event of snapshot.events) view = reduceRun(view, event)
   if (snapshot.tasks.length) view = { ...view, tasks: snapshot.tasks.map((t) => ({ ...t })) }
   if (snapshot.results.length) view = { ...view, results: snapshot.results.map((r) => ({ ...r })) }
-  if (snapshot.error) view = { ...view, phase: "error", error: snapshot.error }
+  if (snapshot.status === "cancelled") view = { ...view, phase: "cancelled", error: snapshot.error }
+  else if (snapshot.error) view = { ...view, phase: "error", error: snapshot.error }
   else if (snapshot.status === "complete") view = { ...view, phase: "complete" }
   else if (snapshot.status === "planning" && view.phase === "idle") view = { ...view, phase: "planning" }
   view = { ...view, cursor: snapshot.events.length - 1 }

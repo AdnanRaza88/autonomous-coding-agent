@@ -55,7 +55,13 @@ export interface PermissionPrompt {
   detail?: string
 }
 
-export type PermissionChoice = "allow" | "deny" | "allow_session"
+export type PermissionChoice =
+  | "allow"
+  | "deny"
+  | "allow_session"
+  | "allow_always"
+  | "allow_server"
+  | "deny_session"
 
 export interface StartRunRequest {
   goal: string
@@ -69,12 +75,19 @@ export interface StartRunResponse {
 
 export interface RunSnapshot {
   runId: string
-  status: "planning" | "running" | "complete" | "error"
+  status: "planning" | "running" | "complete" | "error" | "cancelled"
   goal?: string
   tasks: AgentTask[]
   results: AgentResult[]
   events: OrchestratorEvent[]
   error?: string
+}
+
+export interface RunSummary {
+  id: string
+  goal: string
+  status: string
+  createdAt: string
 }
 
 export interface SaveProviderRequest {
@@ -96,6 +109,8 @@ export interface AgentCoreApi {
   saveProvider(body: SaveProviderRequest): Promise<SavedProvider>
   startRun(body: StartRunRequest): Promise<StartRunResponse>
   getRun(runId: string): Promise<RunSnapshot>
+  listRuns(): Promise<RunSummary[]>
+  cancelRun(runId: string): Promise<{ runId: string; cancelled: boolean; status?: string }>
   listSubagents(): Promise<SubagentDraft[]>
   upsertSubagent(body: SubagentDraft): Promise<SubagentDraft>
   deleteSubagent(id: string): Promise<void>
@@ -105,6 +120,7 @@ export interface AgentCoreApi {
   connectMcpServer(body: McpServerDraft): Promise<McpServerDraft>
   listPermissions(): Promise<{ pending: PermissionPrompt[] }>
   decidePermission(id: string, decision: PermissionChoice): Promise<void>
+  clearPermissionSession(): Promise<void>
 }
 
 export function redactProvider(config: ProviderConfig): SavedProvider {

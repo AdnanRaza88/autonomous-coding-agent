@@ -7,6 +7,7 @@ import type {
   ProviderModel,
   ProviderSummary,
   RunSnapshot,
+  RunSummary,
   SaveProviderRequest,
   SavedProvider,
   SlashCommandInfo,
@@ -57,6 +58,15 @@ export function createHttpApi(baseUrl = ""): AgentCoreApi {
         body: JSON.stringify(body),
       }),
     getRun: (runId) => request<RunSnapshot>(`/api/runs/${encodeURIComponent(runId)}`),
+    listRuns: async () => {
+      const body = await request<{ runs: RunSummary[] }>("/api/runs")
+      return body.runs
+    },
+    cancelRun: (runId) =>
+      request<{ runId: string; cancelled: boolean; status?: string }>(
+        `/api/runs/${encodeURIComponent(runId)}/cancel`,
+        { method: "POST" },
+      ),
     listSubagents: () => request<SubagentDraft[]>("/api/subagents"),
     upsertSubagent: (body) =>
       request<SubagentDraft>("/api/subagents", {
@@ -83,5 +93,6 @@ export function createHttpApi(baseUrl = ""): AgentCoreApi {
         method: "POST",
         body: JSON.stringify({ decision }),
       }),
+    clearPermissionSession: () => request<void>("/api/permissions/session", { method: "DELETE" }),
   }
 }
