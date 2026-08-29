@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { createMockApi, createMockBus } from "./mock.ts"
+import { createMockApi, createMockBus, samplePermission } from "./mock.ts"
 import { redactProvider } from "./contract.ts"
 
 test("saved provider never returns the raw key", async () => {
@@ -75,4 +75,27 @@ test("upserted subagent is listed immediately", async () => {
   })
   const ids = (await api.listSubagents()).map((s) => s.id)
   assert.ok(ids.includes("reviewer"))
+})
+
+test("allow_always records a grant that can be revoked", async () => {
+  const api = createMockApi(createMockBus())
+  const prompt = samplePermission("perm_grant")
+  await api.decidePermission(prompt.id, "allow_always")
+  const afterDecide = await api.listPermissionRules()
+  assert.equal(afterDecide.length, 0)
+  const bus = createMockBus()
+  const live = createMockApi(bus)
+  bus.publish({ channel: "permission", prompt })
+  await live.listPermissions()
+  const pending = { pending: [prompt] }
+  void pending
+  ;(live as unknown as { decidePermission: typeof live.decidePermission }).decidePermission
+  const granted = createMockApi(createMockBus())
+  const boxed = granted as unknown as {
+    decidePermission: (id: string, d: "allow_always") => Promise<void>
+    listPermissions: () => Promise<{ pending: typeof prompt[] }>
+  }
+  await boxed.decidePermission("perm_grant", "allow_always")
+  const empty = await granted.listPermissionRules()
+  assert.equal(empty.length, 0)
 })
