@@ -49,11 +49,13 @@ await runSubagent(task, spec, providerConfig, {
   definitionId: "coder",
   adapter: customAdapter,
   attempt: 2,
+  onDelta: (text) => {},
 })
 ```
 
 - Builds an isolated `ChatMessage[]` every call (system = persona + full SharedSpec, user = task).
 - Uses `getAdapter(providerConfig)` from `@agent-core/providers` unless `adapter` is supplied.
+- When `onDelta` is set and no adapter is injected, tokens stream through `streamChat`.
 - Does not verify the result; verification belongs to the orchestrator.
 
 ### `runBabySubagent`
@@ -87,6 +89,8 @@ if (signal) {
 Built-in definitions registered on first import: `planner`, `coder`, `reviewer`, `tester`, `researcher`, `sdd`.
 
 ## Concurrent safety
+
+Pass `onDelta` to receive token chunks while the worker writes. When no adapter is injected, the runner uses `streamChat` from the provider layer. Injected adapters fall back to a single `chat` call and forward that reply as one chunk.
 
 Every invocation allocates its own message array and reads the definition registry by value. Ten parallel `runSubagent` calls with different tasks and the same `SharedSpec` cannot leak messages or task state into each other.
 
