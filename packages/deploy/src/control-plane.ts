@@ -1,15 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { AgentResult, AgentTask, ProviderConfig } from "@agent-core/types"
 import { getProviderModels, listBuiltinProviders } from "@agent-core/providers"
-import { createRun, getRecord, getRunEvents } from "@agent-core/graph-engine"
+import { cancelRun, createRun, getRecord, getRunEvents, listRuns } from "@agent-core/graph-engine"
 import type { CreateRunOptions } from "@agent-core/graph-engine"
 import {
+  clearSessionGrants,
   connectMcpServer,
   getServerConfig,
   listConfiguredServers,
   listConnectedServers,
+  listPermissionRules,
   listSlashCommands,
   rememberServerConfig,
+  removePermissionRule,
   runSlashCommand,
   setPermissionHandler,
 } from "@agent-core/mcp-hooks-plugins"
@@ -43,6 +46,15 @@ type Pending = {
   request: PermissionRequest
   resolve: (decision: PermissionDecision) => void
 }
+
+const DECISIONS: PermissionDecision[] = [
+  "allow",
+  "deny",
+  "allow_session",
+  "allow_always",
+  "allow_server",
+  "deny_session",
+]
 
 let seq = 0
 const pending = new Map<string, Pending>()
@@ -228,9 +240,9 @@ export async function registerControlPlane(
         reply.code(404)
         return { error: "unknown permission" }
       }
-      if (decision !== "allow" && decision !== "deny" && decision !== "allow_session") {
+      if (!decision || !DECISIONS.includes(decision)) {
         reply.code(400)
-        return { error: "decision must be allow, deny, or allow_session" }
+        return { error: "decision must be allow, deny, allow_session, allow_always, allow_server, or deny_session" }
       }
       pending.delete(req.params.id)
       item.resolve(decision)
@@ -240,6 +252,24 @@ export async function registerControlPlane(
   )
 
   app.get("/api/permissions", async () => ({ pending: [...pending.values()].map((p) => p.prompt) }))
+
+  app.get("/api/permissions/rules", async () => ({ rules: listPermissionRules() }))
+
+  app.delete<{ Params: { id: string } }>("/api/permissions/rules/:id", async (req, reply) => {
+    const ok = removePermissionRule(req.params.id)
+    if (!ok) {
+      reply.code(404)
+      return { error: "unknown rule" }
+    }
+    reply.code(204)
+    return undefined
+  })
+
+  app.delete("/api/permissions/session", async (_req, reply) => {
+    clearSessionGrants()
+    reply.code(204)
+    return undefined
+  })
 
   app.get("/api/permissions/events", async (req, reply) => {
     openSse(reply)
@@ -272,18 +302,30 @@ export async function registerControlPlane(
         return { error: `unknown provider ${providerId}` }
       }
       const runId = await createRun(goal, config, options.runOptions)
-      runtime.store.upsertRun({
-        id: runId,
-        goal,
-        status: "planning",
-        createdAt: new Date().toISOString(),
-      })
+      persistRun(runtime, runId, goal)
       runtime.audit.write({ action: "run.start", allowed: true, detail: runId })
       return { runId }
     },
   )
 
-  app.get("/api/runs", async () => ({ runs: runtime.store.listRuns() }))
+  app.get("/api/runs", async () => {
+    const live = new Map(listRuns().map((row) => [row.id, row]))
+    const stored = runtime.store.listRuns()
+    const ids = new Set([...stored.map((r) => r.id), ...live.keys()])
+    const runs = [...ids].map((id) => {
+      const disk = runtime.store.getRun(id)
+      const mem = live.get(id)
+      const rec = getRecord(id)
+      return {
+        id,
+        goal: disk?.goal ?? mem?.goal ?? rec?.spec?.goal ?? "",
+        status: rec?.status ?? mem?.status ?? disk?.status ?? "unknown",
+        createdAt: disk?.createdAt ?? (mem ? new Date(mem.createdAt).toISOString() : new Date().toISOString()),
+      }
+    })
+    runs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    return { runs }
+  })
 
   app.get<{ Params: { id: string } }>("/api/runs/:id", async (req, reply) => {
     const rec = getRecord(req.params.id)
@@ -291,16 +333,29 @@ export async function registerControlPlane(
       reply.code(404)
       return { error: `unknown run ${req.params.id}` }
     }
+    persistRun(runtime, rec.id)
     const stored = runtime.store.getRun(req.params.id)
     return {
       runId: rec.id,
       status: rec.status,
-      goal: stored?.goal,
+      goal: stored?.goal ?? rec.spec?.goal,
       tasks: rec.tasks.map(cloneTask),
       results: rec.results.map(cloneResult),
       events: rec.events.slice(),
       error: rec.error,
     }
+  })
+
+  app.post<{ Params: { id: string } }>("/api/runs/:id/cancel", async (req, reply) => {
+    const rec = getRecord(req.params.id)
+    if (!rec) {
+      reply.code(404)
+      return { error: `unknown run ${req.params.id}` }
+    }
+    const accepted = cancelRun(req.params.id)
+    persistRun(runtime, req.params.id)
+    runtime.audit.write({ action: "run.cancel", allowed: accepted, detail: req.params.id })
+    return { runId: req.params.id, cancelled: accepted, status: getRecord(req.params.id)?.status }
   })
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>("/api/runs/:id/events", async (req, reply) => {
@@ -319,6 +374,7 @@ export async function registerControlPlane(
       for await (const event of getRunEvents(req.params.id, after)) {
         if (req.raw.destroyed) break
         index += 1
+        persistRun(runtime, req.params.id)
         reply.raw.write(
           formatSse(
             "orchestrator",
@@ -340,8 +396,20 @@ export async function registerControlPlane(
         }),
       )
     } finally {
+      persistRun(runtime, req.params.id)
       if (!reply.raw.writableEnded) reply.raw.end()
     }
+  })
+}
+
+function persistRun(runtime: Runtime, runId: string, goalHint?: string): void {
+  const rec = getRecord(runId)
+  const prev = runtime.store.getRun(runId)
+  runtime.store.upsertRun({
+    id: runId,
+    goal: goalHint ?? prev?.goal ?? rec?.spec?.goal ?? "",
+    status: rec?.status ?? prev?.status ?? "planning",
+    createdAt: prev?.createdAt ?? new Date(rec?.createdAt ?? Date.now()).toISOString(),
   })
 }
 
