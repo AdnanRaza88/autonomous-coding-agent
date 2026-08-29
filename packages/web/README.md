@@ -11,6 +11,8 @@ Live runs hydrate from `GET /api/runs/:id` then subscribe to `GET /api/runs/:id/
 - Run: goal composer, provider/model pickers, live DAG tree grouped by `topologicalBatches`, cancel while planning or running
 - History: sidebar list of persisted runs; click to hydrate
 - Subagents: create/edit/delete definitions; the next `startRun` sees the new list without a reload
+- Knowledge: AutoMem/Graphiti health and recall, fact edits, Obsidian vault notes and wiki-link graph
+- Deploy: detect project kind from the active run, store target tokens (never re-read), ship via Vercel or Fly
 - Connections: provider credentials (key sent once, never re-read) and MCP server attach
 - Permission modal: once / session / server session / always / deny session / deny once
 - Slash palette: type `/` in the composer
@@ -51,5 +53,15 @@ npm run dev
 | GET | `/api/permissions/rules` | session and always grants |
 | DELETE | `/api/permissions/session` | drop session grants |
 | POST | `/api/permissions/:id` | `{ decision }` |
+| GET | `/api/memory/health` | AutoMem + Graphiti |
+| GET | `/api/memory/context` | `?q=` project recall |
+| GET/POST | `/api/memory/facts` | graph facts |
+| GET/POST | `/api/vault/notes` | Obsidian notes |
+| GET | `/api/vault/notes/:id` | full note body |
+| GET | `/api/vault/graph` | wiki-link graph |
+| GET | `/api/deploy/targets` | registered adapters |
+| GET | `/api/deploy/detect` | `?runId=` |
+| POST | `/api/deploy/credentials` | token stored server-side |
+| POST | `/api/deploy` | ship a bound run |
 
 Module 06 owns encrypted persistence of the key after the first POST.
