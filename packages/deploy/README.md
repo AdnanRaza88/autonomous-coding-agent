@@ -15,6 +15,11 @@ The server hosts the control-plane HTTP contract used by `packages/web`:
 - `GET/POST /api/subagents` persisted and registered live
 - `GET /api/commands` and `POST /api/commands/:name` through the slash catalog
 - `GET/POST /api/mcp/servers` plus `POST /api/permissions/:id`
+- `GET /api/memory/health`, `GET /api/memory/context`, `GET/POST /api/memory/facts`
+- `GET/POST /api/vault/notes`, `GET /api/vault/graph`, `GET /api/vault/notes/:id/backlinks`
+- `GET /api/deploy/targets`, `GET /api/deploy/detect`, `POST /api/deploy/credentials`, `POST /api/deploy`
+
+Memory defaults to the in-process local layer. Set `AGENT_CORE_MEMORY_MODE=http` to talk to AutoMem and Graphiti. Vault files live under `$AGENT_CORE_DATA/vault` and stay Obsidian-compatible.
 
 Sandbox and secret routes from module 06 remain unchanged.
 
