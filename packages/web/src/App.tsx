@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useState } from "react"
 import type { PermissionPrompt, SavedProvider, SlashCommandInfo, SubagentDraft } from "./api/contract"
 import { createHttpApi } from "./api/client"
 import { createMockApi, createMockBus } from "./api/mock"
+import { watchPermissions, watchRunEvents } from "./api/stream"
 import { Layout } from "./ui/Layout"
 import { Composer } from "./ui/Composer"
 import { AgentTree } from "./ui/AgentTree"
@@ -16,7 +17,7 @@ import { parseComposer } from "./lib/filter"
 
 type Screen = "run" | "agents" | "settings"
 
-const useLiveBackend = import.meta.env.VITE_API_MODE === "live"
+const useLiveBackend = import.meta.env.VITE_API_MODE !== "mock"
 
 export function App() {
   const bus = useMemo(() => createMockBus(), [])
@@ -73,6 +74,7 @@ export function App() {
   }, [api])
 
   useEffect(() => {
+    if (useLiveBackend) return
     return bus.subscribe((msg) => {
       if (msg.channel === "orchestrator" && msg.runId === run.runId) {
         setRun({ kind: "event", event: msg.event })
@@ -80,6 +82,20 @@ export function App() {
       if (msg.channel === "permission") setPrompt(msg.prompt)
     })
   }, [bus, run.runId])
+
+  useEffect(() => {
+    if (!useLiveBackend || !run.runId) return
+    const stream = watchRunEvents(run.runId, (msg) => {
+      setRun({ kind: "event", event: msg.event })
+    })
+    return () => stream.close()
+  }, [run.runId])
+
+  useEffect(() => {
+    if (!useLiveBackend) return
+    const stream = watchPermissions((next) => setPrompt(next))
+    return () => stream.close()
+  }, [])
 
   async function onProviderChange(id: string) {
     setProviderId(id)

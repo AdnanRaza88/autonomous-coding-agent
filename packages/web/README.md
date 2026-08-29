@@ -1,6 +1,8 @@
 # @agent-core/web
 
-Browser UI for Agent Core. Vite + React + Tailwind. Talks to the backend over REST and WebSocket only.
+Browser UI for Agent Core. Vite + React + Tailwind. Talks to the backend over REST and Server-Sent Events.
+
+Production builds (`npm run build`) use `createHttpApi` against same-origin `/api`. `npm run dev` keeps the in-package mock so the UI can be exercised without the boot server. `npm run dev:live` proxies `/api` to `AGENT_CORE_API` (default `http://127.0.0.1:3000`).
 
 ## Screens
 
@@ -23,8 +25,6 @@ npm test
 npm run dev
 ```
 
-`npm run dev` boots the UI against the in-package mock API (`createMockApi`). Set `VITE_API_MODE=live` to point at a real backend through the Vite `/api` proxy (`AGENT_CORE_API`, default `http://127.0.0.1:8787`).
-
 ## REST contract the UI expects
 
 | Method | Path | Notes |
@@ -35,13 +35,14 @@ npm run dev
 | POST | `/api/providers` | body includes `apiKey` once |
 | POST | `/api/runs` | `{ goal, providerId, model }` |
 | GET | `/api/runs/:id` | snapshot + events |
-| WS | `/api/runs/:id/events` | `OrchestratorEvent` frames |
+| GET | `/api/runs/:id/events` | SSE `orchestrator` frames |
 | GET/POST | `/api/subagents` | |
 | DELETE | `/api/subagents/:id` | |
 | GET | `/api/commands` | |
 | POST | `/api/commands/:name` | `{ args }` |
 | GET/POST | `/api/mcp/servers` | |
+| GET | `/api/permissions` | queued prompts |
+| GET | `/api/permissions/events` | SSE `permission` frames |
 | POST | `/api/permissions/:id` | `{ decision }` |
-| WS | permission frames on the same event socket | `{ channel: "permission", prompt }` |
 
 Module 06 owns encrypted persistence of the key after the first POST.

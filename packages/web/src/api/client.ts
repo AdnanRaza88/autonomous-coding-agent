@@ -1,7 +1,9 @@
 import { maskSecrets } from "./secrets.js"
 import type {
   AgentCoreApi,
+  McpServerDraft,
   PermissionChoice,
+  PermissionPrompt,
   ProviderModel,
   ProviderSummary,
   RunSnapshot,
@@ -69,12 +71,13 @@ export function createHttpApi(baseUrl = ""): AgentCoreApi {
         method: "POST",
         body: JSON.stringify({ args }),
       }),
-    listMcpServers: () => request<import("./contract.js").McpServerDraft[]>("/api/mcp/servers"),
+    listMcpServers: () => request<McpServerDraft[]>("/api/mcp/servers"),
     connectMcpServer: (body) =>
-      request<import("./contract.js").McpServerDraft>("/api/mcp/servers", {
+      request<McpServerDraft>("/api/mcp/servers", {
         method: "POST",
         body: JSON.stringify(maskSecrets(body)),
       }),
+    listPermissions: () => request<{ pending: PermissionPrompt[] }>("/api/permissions"),
     decidePermission: (id, decision: PermissionChoice) =>
       request<void>(`/api/permissions/${encodeURIComponent(id)}`, {
         method: "POST",
