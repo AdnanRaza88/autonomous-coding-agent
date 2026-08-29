@@ -97,6 +97,7 @@ export interface RunSnapshot {
   inputTokens?: number
   outputTokens?: number
   calls?: number
+  estimatedUsd?: number
 }
 
 export interface RunSummary {
@@ -107,6 +108,7 @@ export interface RunSummary {
   inputTokens?: number
   outputTokens?: number
   calls?: number
+  estimatedUsd?: number
 }
 
 export interface SaveProviderRequest {

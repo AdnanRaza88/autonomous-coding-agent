@@ -413,13 +413,21 @@ async function simulateRun(
     snap.events.push(event)
     applyEvent(snap, event)
     const summary = summaries.get(runId)
-    if (summary) summary.status = snap.status
+    if (summary) {
+      summary.status = snap.status
+      summary.inputTokens = snap.inputTokens
+      summary.outputTokens = snap.outputTokens
+      summary.calls = snap.calls
+    }
     bus.publish({ channel: "orchestrator", runId, event })
   }
 
   emit({ type: "plan_ready", tasks: structuredClone(tasks) })
   const batches = topologicalBatches(tasks)
   const results: AgentResult[] = []
+  let calls = 0
+  let inputTokens = 0
+  let outputTokens = 0
 
   for (const batch of batches) {
     if (aborted.has(runId)) return
@@ -429,6 +437,10 @@ async function simulateRun(
         emit({ type: "agent_start", taskId: node.id })
         await wait(40)
         if (aborted.has(runId)) return
+        calls += 1
+        inputTokens += 80
+        outputTokens += 40
+        emit({ type: "usage", inputTokens, outputTokens, calls })
         emit({
           type: "agent_verify",
           taskId: node.id,
@@ -467,6 +479,12 @@ export function applyEvent(snap: RunSnapshot, event: OrchestratorEvent): void {
   }
   if (event.type === "agent_done") {
     patchTask(snap, event.taskId, "passed")
+    return
+  }
+  if (event.type === "usage") {
+    snap.inputTokens = event.inputTokens
+    snap.outputTokens = event.outputTokens
+    snap.calls = event.calls
     return
   }
   if (event.type === "run_complete") {
