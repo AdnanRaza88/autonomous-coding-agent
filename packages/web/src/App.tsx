@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
-import type { PermissionPrompt, RunSummary, SavedProvider, SlashCommandInfo, SubagentDraft } from "./api/contract"
+import type {
+  PermissionPrompt,
+  PermissionRuleView,
+  RunSummary,
+  SavedProvider,
+  SlashCommandInfo,
+  SubagentDraft,
+} from "./api/contract"
 import { createHttpApi } from "./api/client"
 import { createMockApi, createMockBus } from "./api/mock"
 import { watchPermissions, watchRunEvents } from "./api/stream"
@@ -38,6 +45,7 @@ export function App() {
   const [agents, setAgents] = useState<SubagentDraft[]>([])
   const [commands, setCommands] = useState<SlashCommandInfo[]>([])
   const [servers, setServers] = useState<Awaited<ReturnType<typeof api.listMcpServers>>>([])
+  const [rules, setRules] = useState<PermissionRuleView[]>([])
   const [prompt, setPrompt] = useState<PermissionPrompt | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [draft, setDraft] = useState("")
@@ -54,12 +62,13 @@ export function App() {
   useEffect(() => {
     let alive = true
     void (async () => {
-      const [plist, slist, clist, mlist, rlist] = await Promise.all([
+      const [plist, slist, clist, mlist, rlist, grants] = await Promise.all([
         api.listProviders(),
         api.listSubagents(),
         api.listCommands(),
         api.listMcpServers(),
         api.listRuns().catch(() => [] as RunSummary[]),
+        api.listPermissionRules().catch(() => [] as PermissionRuleView[]),
       ])
       if (!alive) return
       setProviders(plist)
@@ -67,6 +76,7 @@ export function App() {
       setCommands(clist)
       setServers(mlist)
       setHistory(rlist)
+      setRules(grants)
       const first = plist[0]?.id ?? "groq"
       setProviderId(first)
       const mods = await api.listProviderModels(first)
@@ -124,6 +134,14 @@ export function App() {
   async function refreshHistory() {
     try {
       setHistory(await api.listRuns())
+    } catch {
+      return
+    }
+  }
+
+  async function refreshRules() {
+    try {
+      setRules(await api.listPermissionRules())
     } catch {
       return
     }
@@ -259,6 +277,7 @@ export function App() {
           providers={providers}
           saved={saved}
           servers={servers}
+          rules={rules}
           onSaveProvider={async (body) => {
             const record = await api.saveProvider(body)
             setSaved(await api.listSavedProviders())
@@ -267,6 +286,14 @@ export function App() {
           onConnectServer={async (body) => {
             await api.connectMcpServer(body)
             setServers(await api.listMcpServers())
+          }}
+          onRevokeRule={async (id) => {
+            await api.removePermissionRule(id)
+            await refreshRules()
+          }}
+          onClearSession={async () => {
+            await api.clearPermissionSession()
+            await refreshRules()
           }}
         />
       ) : null}
@@ -277,6 +304,7 @@ export function App() {
           onDecide={async (decision) => {
             await api.decidePermission(prompt.id, decision)
             setPrompt(null)
+            await refreshRules()
           }}
         />
       ) : null}
