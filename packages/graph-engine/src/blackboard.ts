@@ -1,4 +1,4 @@
-import type { AgentResult, AgentTask, OrchestratorEvent, SharedSpec } from "@agent-core/types"
+import type { AgentResult, AgentTask, OrchestratorEvent, SharedSpec, TokenUsage } from "@agent-core/types"
 
 export type RunStatus = "planning" | "running" | "complete" | "error" | "cancelled"
 
@@ -13,6 +13,7 @@ export type RunRecord = {
   error?: string
   cancelled: boolean
   createdAt: number
+  usage: TokenUsage
 }
 
 const runs = new Map<string, RunRecord>()
@@ -35,6 +36,7 @@ export function createRecord(id: string): RunRecord {
     roles: new Map(),
     cancelled: false,
     createdAt: Date.now(),
+    usage: { inputTokens: 0, outputTokens: 0, calls: 0 },
   }
   runs.set(id, rec)
   return rec
@@ -102,6 +104,16 @@ export function pushEvent(runId: string, event: OrchestratorEvent): void {
     rec.error = event.reason
   }
   wake(runId)
+}
+
+export function addUsage(runId: string, delta: TokenUsage): TokenUsage {
+  const rec = requireRecord(runId)
+  rec.usage = {
+    inputTokens: rec.usage.inputTokens + delta.inputTokens,
+    outputTokens: rec.usage.outputTokens + delta.outputTokens,
+    calls: rec.usage.calls + delta.calls,
+  }
+  return rec.usage
 }
 
 export function markRunning(runId: string): void {
