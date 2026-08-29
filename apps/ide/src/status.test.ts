@@ -43,3 +43,11 @@ test("folds orchestrator events", () => {
   assert.equal(snap.phase, "done")
   assert.equal(snap.failed, 1)
 })
+
+test("usage events append token totals to the bar", () => {
+  let snap = emptyStatus()
+  snap = foldEvent(snap, { type: "planning" })
+  snap = foldEvent(snap, { type: "usage", inputTokens: 800, outputTokens: 200, calls: 2 })
+  assert.equal(snap.inputTokens, 800)
+  assert.match(statusBarText(snap), /1\.0k tok/)
+})

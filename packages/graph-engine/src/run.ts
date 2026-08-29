@@ -149,7 +149,13 @@ function meterChat(
 ): (config: ProviderConfig, messages: import("@agent-core/types").ChatMessage[]) => Promise<string> {
   return async (config, messages) => {
     const text = await chat(config, messages)
-    addUsage(runId, estimateMessageUsage(messages, text))
+    const total = addUsage(runId, estimateMessageUsage(messages, text))
+    pushEvent(runId, {
+      type: "usage",
+      inputTokens: total.inputTokens,
+      outputTokens: total.outputTokens,
+      calls: total.calls,
+    })
     return text
   }
 }

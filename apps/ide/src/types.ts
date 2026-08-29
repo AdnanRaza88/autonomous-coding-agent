@@ -80,6 +80,9 @@ export interface StatusSnapshot {
   passed: number
   failed: number
   total: number
+  inputTokens?: number
+  outputTokens?: number
+  calls?: number
 }
 
 export interface SlashPaletteCommand {

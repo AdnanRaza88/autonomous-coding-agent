@@ -1,4 +1,5 @@
 import type { RunSummary } from "../api/contract"
+import { formatTokens, formatUsd } from "../lib/usage"
 
 export function RunHistory(props: {
   items: RunSummary[]
@@ -26,9 +27,10 @@ export function RunHistory(props: {
               <span className="block truncate text-xs">{row.goal || row.id}</span>
               <span className="font-mono text-[10px] uppercase tracking-wide">
                 {row.status}
-                {row.inputTokens || row.outputTokens
-                  ? ` · ${(row.inputTokens ?? 0) + (row.outputTokens ?? 0)} tok`
+                {formatTokens(row.inputTokens, row.outputTokens, row.calls)
+                  ? ` · ${formatTokens(row.inputTokens, row.outputTokens, row.calls)}`
                   : ""}
+                {formatUsd(row.estimatedUsd) ? ` · ${formatUsd(row.estimatedUsd)}` : ""}
               </span>
             </button>
           </li>

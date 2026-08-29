@@ -59,3 +59,30 @@ test("hydrateRun rebuilds view from a snapshot", () => {
   assert.equal(view.cursor, 2)
   assert.equal(view.tasks[0]?.status, "running")
 })
+
+test("usage events update cumulative counters", () => {
+  let view = emptyRun()
+  view = reduceRun(view, { type: "planning" })
+  view = reduceRun(view, { type: "usage", inputTokens: 120, outputTokens: 40, calls: 1 })
+  view = reduceRun(view, { type: "usage", inputTokens: 300, outputTokens: 90, calls: 2 })
+  assert.equal(view.phase, "planning")
+  assert.equal(view.inputTokens, 300)
+  assert.equal(view.outputTokens, 90)
+  assert.equal(view.calls, 2)
+})
+
+test("hydrateRun copies snapshot token totals", () => {
+  const view = hydrateRun({
+    runId: "r9",
+    status: "complete",
+    goal: "ship cli",
+    tasks: [],
+    results: [],
+    events: [{ type: "planning" }, { type: "run_complete", results: [] }],
+    inputTokens: 80,
+    outputTokens: 20,
+    calls: 3,
+  })
+  assert.equal(view.inputTokens, 80)
+  assert.equal(view.calls, 3)
+})

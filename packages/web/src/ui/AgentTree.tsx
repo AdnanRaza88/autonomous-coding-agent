@@ -2,6 +2,7 @@ import { topologicalBatches } from "../lib/dag"
 import { statusLabel, statusTone } from "../lib/status"
 import type { RunView } from "../state/events"
 import { StatusMark } from "./StatusMark"
+import { formatTokens } from "../lib/usage"
 
 const HINTS = [
   "Refactor auth to JWT with refresh rotation",
@@ -57,6 +58,11 @@ export function AgentTree(props: {
             {live ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" /> : null}
           </div>
           <h1 className="mt-3 text-xl font-medium leading-snug tracking-tight">{view.goal || "Untitled run"}</h1>
+          {formatTokens(view.inputTokens, view.outputTokens, view.calls) ? (
+            <p className="mt-2 font-mono text-[11px] text-muted">
+              {formatTokens(view.inputTokens, view.outputTokens, view.calls)}
+            </p>
+          ) : null}
         </div>
         {live && props.onCancel ? (
           <button
