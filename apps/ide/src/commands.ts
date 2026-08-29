@@ -75,6 +75,7 @@ export const HOST_COMMANDS = [
   { id: "agent-core.rejectDiff", title: "Agent Core: Reject Proposed Change" },
   { id: "agent-core.toggleTheme", title: "Agent Core: Toggle Light/Dark Theme" },
   { id: "agent-core.focusComposer", title: "Agent Core: Focus Composer" },
+  { id: "agent-core.cancelRun", title: "Agent Core: Cancel Run" },
 ] as const
 
 export function commandIdForSlash(name: string): string {
