@@ -108,6 +108,16 @@ export function AgentTree(props: {
                         {task.instructions}
                       </p>
                     ) : null}
+                    {view.drafts[task.id] ? (
+                      <pre className="mt-2 max-h-40 overflow-auto pl-[18px] font-mono text-[12px] leading-relaxed text-ink/80">
+                        {clip(view.drafts[task.id], 1200)}
+                      </pre>
+                    ) : null}
+                    {view.notes[task.id] ? (
+                      <p className="mt-1.5 pl-[18px] text-[12px] text-muted">
+                        {view.notes[task.id]}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="shrink-0 font-mono text-[11px] text-muted">{statusLabel(task.status)}</span>
                 </li>
@@ -118,4 +128,9 @@ export function AgentTree(props: {
       </div>
     </div>
   )
+}
+
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}…`
 }
