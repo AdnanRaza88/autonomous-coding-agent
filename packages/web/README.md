@@ -13,6 +13,7 @@ Live runs hydrate from `GET /api/runs/:id` then subscribe to `GET /api/runs/:id/
 - Subagents: create/edit/delete definitions; the next `startRun` sees the new list without a reload
 - Knowledge: AutoMem/Graphiti health and recall, fact edits, Obsidian vault notes and wiki-link graph
 - Deploy: detect project kind from the active run, store target tokens (never re-read), ship via Vercel or Fly
+- First run: onboarding overlay until a provider key is stored (or Ollama is selected)
 - Connections: provider credentials (key sent once, never re-read) and MCP server attach
 - Permission modal: once / session / server session / always / deny session / deny once
 - Slash palette: type `/` in the composer
@@ -38,6 +39,7 @@ npm run dev
 | GET | `/api/providers/:id/models` | |
 | GET | `/api/providers/saved` | keys omitted; `hasKey` only |
 | POST | `/api/providers` | body includes `apiKey` once |
+| POST | `/api/providers/:id/probe` | live connect check; key never returned |
 | POST | `/api/runs` | `{ goal, providerId, model }` |
 | GET | `/api/runs` | persisted history |
 | GET | `/api/runs/:id` | snapshot + events + optional goal |
