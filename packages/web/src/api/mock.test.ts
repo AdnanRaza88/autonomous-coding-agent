@@ -52,6 +52,17 @@ test("startRun emits plan then completion on the bus", async () => {
   assert.ok(snap.tasks.some((t) => t.status === "passed"))
 })
 
+test("listRuns keeps started goals and cancel marks cancelled", async () => {
+  const api = createMockApi(createMockBus())
+  const started = await api.startRun({ goal: "abort me", providerId: "groq", model: "llama-3.3-70b-versatile" })
+  const listed = await api.listRuns()
+  assert.ok(listed.some((r) => r.id === started.runId && r.goal === "abort me"))
+  const cancelled = await api.cancelRun(started.runId)
+  assert.equal(cancelled.cancelled, true)
+  const snap = await api.getRun(started.runId)
+  assert.equal(snap.status, "cancelled")
+})
+
 test("upserted subagent is listed immediately", async () => {
   const api = createMockApi(createMockBus())
   await api.upsertSubagent({

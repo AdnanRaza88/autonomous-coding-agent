@@ -29,6 +29,14 @@ test("run_complete stores results", () => {
   assert.equal(view.results[0]?.output, "ok")
 })
 
+test("run_cancelled becomes a cancelled phase", () => {
+  let view = emptyRun()
+  view = reduceRun(view, { type: "planning" })
+  view = reduceRun(view, { type: "run_cancelled", reason: "cancelled" })
+  assert.equal(view.phase, "cancelled")
+  assert.equal(view.error, "cancelled")
+})
+
 test("hydrateRun rebuilds view from a snapshot", () => {
   const view = hydrateRun({
     runId: "r9",
