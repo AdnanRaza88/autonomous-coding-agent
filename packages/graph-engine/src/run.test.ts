@@ -151,7 +151,7 @@ test("getRunEvents yields every state transition", async () => {
   assert.ok(types.includes("usage"))
   assert.deepEqual(
     types.filter((t) => t !== "usage"),
-    ["planning", "plan_ready", "agent_start", "agent_verify", "agent_done", "run_complete"],
+    ["planning", "plan_ready", "agent_start", "agent_delta", "agent_verify", "agent_done", "run_complete"],
   )
   const state = getRunState(runId)
   assert.ok(state.usage.calls >= 2)
@@ -186,7 +186,7 @@ test("getRunEvents after a cursor skips already seen frames", async () => {
   }
   assert.deepEqual(
     rest.filter((t) => t !== "usage"),
-    ["agent_start", "agent_verify", "agent_done", "run_complete"],
+    ["agent_start", "agent_delta", "agent_verify", "agent_done", "run_complete"],
   )
 })
 
@@ -271,4 +271,25 @@ test("cancelRun stops remaining work and emits run_cancelled", async () => {
   assert.ok(types.includes("run_cancelled"))
   assert.equal(types.includes("run_complete"), false)
   assert.ok(started <= 1)
+})
+
+test("runner output is published as agent_delta before verify", async () => {
+  clearRuns()
+  const runId = await createRun("delta stream", config, {
+    chat: chatScript({}),
+    maxRetries: 1,
+    runTask: async (task) => ({ taskId: task.id, output: `draft ${task.id}`, attempt: 1, passed: true }),
+  })
+  await waitForRun(runId)
+  const events: OrchestratorEvent[] = []
+  for await (const event of getRunEvents(runId)) events.push(event)
+  const deltas = events.filter((e) => e.type === "agent_delta")
+  assert.ok(deltas.length >= 2)
+  for (const event of deltas) {
+    if (event.type !== "agent_delta") continue
+    assert.match(event.text, /^draft t/)
+  }
+  const firstDone = events.findIndex((e) => e.type === "agent_done")
+  const firstDelta = events.findIndex((e) => e.type === "agent_delta")
+  assert.ok(firstDelta >= 0 && firstDelta < firstDone)
 })
