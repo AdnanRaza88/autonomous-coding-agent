@@ -1,10 +1,17 @@
 import { maskSecrets } from "./secrets.js"
 import type {
   AgentCoreApi,
+  DeployBindingView,
+  DeployResultView,
+  DeployTargetView,
+  DetectedProjectView,
+  GraphFactView,
   McpServerDraft,
+  MemoryHealth,
   PermissionChoice,
   PermissionPrompt,
   PermissionRuleView,
+  ProjectContextView,
   ProviderModel,
   ProviderSummary,
   RunSnapshot,
@@ -15,6 +22,9 @@ import type {
   StartRunRequest,
   StartRunResponse,
   SubagentDraft,
+  VaultGraphView,
+  VaultNoteSummary,
+  VaultNoteView,
 } from "./contract.js"
 
 export class HttpError extends Error {
@@ -101,5 +111,52 @@ export function createHttpApi(baseUrl = ""): AgentCoreApi {
     removePermissionRule: (id) =>
       request<void>(`/api/permissions/rules/${encodeURIComponent(id)}`, { method: "DELETE" }),
     clearPermissionSession: () => request<void>("/api/permissions/session", { method: "DELETE" }),
+    memoryHealth: () => request<MemoryHealth>("/api/memory/health"),
+    memoryContext: (query) =>
+      request<ProjectContextView>(`/api/memory/context?q=${encodeURIComponent(query)}`),
+    listFacts: async (query) => {
+      const qs = query ? `?q=${encodeURIComponent(query)}` : ""
+      const body = await request<{ facts: GraphFactView[] }>(`/api/memory/facts${qs}`)
+      return body.facts
+    },
+    addFact: (body) =>
+      request<GraphFactView>("/api/memory/facts", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    listVaultNotes: async () => {
+      const body = await request<{ notes: VaultNoteSummary[] }>("/api/vault/notes")
+      return body.notes
+    },
+    readVaultNote: (id) => request<VaultNoteView>(`/api/vault/notes/${encodeURIComponent(id)}`),
+    writeVaultNote: (body) =>
+      request<VaultNoteView>("/api/vault/notes", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    vaultGraph: () => request<VaultGraphView>("/api/vault/graph"),
+    vaultBacklinks: async (id) => {
+      const body = await request<{ backlinks: { id: string; title: string }[] }>(
+        `/api/vault/notes/${encodeURIComponent(id)}/backlinks`,
+      )
+      return body.backlinks
+    },
+    listDeployTargets: () => request<DeployTargetView[]>("/api/deploy/targets"),
+    listDeployBindings: async () => {
+      const body = await request<{ bindings: DeployBindingView[] }>("/api/deploy/bindings")
+      return body.bindings
+    },
+    detectDeploy: (runId) =>
+      request<DetectedProjectView>(`/api/deploy/detect?runId=${encodeURIComponent(runId)}`),
+    saveDeployCredentials: (body) =>
+      request<{ targetId: string; hasToken: boolean }>("/api/deploy/credentials", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    deployRun: (body) =>
+      request<DeployResultView>("/api/deploy", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   }
 }
