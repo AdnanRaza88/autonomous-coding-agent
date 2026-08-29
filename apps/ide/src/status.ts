@@ -49,6 +49,8 @@ export function foldEvent(prev: StatusSnapshot, event: OrchestratorEvent, tasks:
         phase: "verifying",
         label: event.pass ? `Verified ${event.taskId}` : `Retry ${event.taskId}`,
       }
+    case "agent_delta":
+      return { ...prev, label: `Writing ${event.taskId}` }
     case "agent_done":
       return statusFromTasks(applyTaskStatus(tasks, event.taskId, "passed"))
     case "run_complete": {
