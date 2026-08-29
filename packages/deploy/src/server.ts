@@ -97,7 +97,7 @@ export async function createApp(opts: ServerOptions = {}): Promise<AppHandle> {
     }
   })
 
-  await registerControlPlane(app, runtime, { runOptions: opts.runOptions })
+  await registerControlPlane(app, runtime, { runOptions: opts.runOptions, probe: opts.probe })
   await registerKnowledgePlane(app, runtime)
 
   const webRoot = opts.webRoot ?? process.env.AGENT_CORE_WEB_ROOT
