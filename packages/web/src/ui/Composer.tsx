@@ -8,7 +8,9 @@ export function Composer(props: {
   models: { id: string; name: string }[]
   onModel: (id: string) => void
   busy: boolean
+  blocked?: boolean
   onSubmit: () => void
+  onBlocked?: () => void
 }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[var(--paper)] via-[var(--paper)] to-transparent px-4 pb-5 pt-12">
@@ -16,6 +18,10 @@ export function Composer(props: {
         className="pointer-events-auto mx-auto max-w-3xl"
         onSubmit={(e) => {
           e.preventDefault()
+          if (props.blocked) {
+            props.onBlocked?.()
+            return
+          }
           props.onSubmit()
         }}
       >
@@ -23,13 +29,21 @@ export function Composer(props: {
           <div className="solid rounded-[14px] px-4 pb-2 pt-3">
             <textarea
               className="max-h-40 min-h-[72px] w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-muted"
-              placeholder="Message Agent Core. Type / for commands."
+              placeholder={
+                props.blocked
+                  ? "Connect a provider before sending a goal."
+                  : "Message Agent Core. Type / for commands."
+              }
               value={props.value}
               onChange={(e) => props.onChange(e.target.value)}
               rows={2}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault()
+                  if (props.blocked) {
+                    props.onBlocked?.()
+                    return
+                  }
                   props.onSubmit()
                 }
               }}
@@ -65,7 +79,7 @@ export function Composer(props: {
                 disabled={props.busy || !props.value.trim()}
                 className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--paper)] transition-opacity disabled:opacity-40"
               >
-                {props.busy ? "Starting" : "Send"}
+                {props.blocked ? "Connect" : props.busy ? "Starting" : "Send"}
               </button>
             </div>
           </div>
