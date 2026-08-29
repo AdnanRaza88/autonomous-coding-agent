@@ -158,6 +158,30 @@ test("getRunEvents yields every state transition", async () => {
   ])
 })
 
+test("getRunEvents after a cursor skips already seen frames", async () => {
+  clearRuns()
+  const runId = await createRun("resume stream", config, {
+    chat: chatScript({
+      plan: JSON.stringify({
+        tasks: [{ id: "t1", title: "A", instructions: "do A", dependsOn: [], role: "coder" }],
+      }),
+    }),
+    maxRetries: 1,
+    runTask: async (task): Promise<AgentResult> => ({
+      taskId: task.id,
+      output: "ok",
+      attempt: 1,
+      passed: true,
+    }),
+  })
+  await waitForRun(runId)
+  const rest: OrchestratorEvent["type"][] = []
+  for await (const event of getRunEvents(runId, 1)) {
+    rest.push(event.type)
+  }
+  assert.deepEqual(rest, ["agent_start", "agent_verify", "agent_done", "run_complete"])
+})
+
 test("same SharedSpec object is passed to every worker", async () => {
   clearRuns()
   const seen: SharedSpec[] = []
