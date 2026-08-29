@@ -10,8 +10,8 @@ Workers never talk to each other. Coordination lives here.
 createRun(userGoal, providerConfig, options?): Promise<string>
 cancelRun(runId, reason?): boolean
 getRunEvents(runId, after?): AsyncIterable<OrchestratorEvent>
-getRunState(runId): { spec, tasks, results, status }
-listRuns(): Array<{ id, status, createdAt, goal? }>
+getRunState(runId): { spec, tasks, results, status, usage }
+listRuns(): Array<{ id, status, createdAt, goal?, usage? }>
 ```
 
 `createRun` finishes spec generation and planning before it returns the run id. Execution continues in the background. Subscribe with `getRunEvents` (buffered from the first event, or from `after + 1` on reconnect) or poll `getRunState`.
@@ -29,7 +29,7 @@ listRuns(): Array<{ id, status, createdAt, goal? }>
 
 ## Events
 
-`planning` → `plan_ready` → `agent_start` → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`.
+`planning` → `usage` (after each metered provider call) → `plan_ready` → `agent_start` → `agent_verify` (each attempt) → `agent_done` → `run_complete`. Failures emit `error`. An abort emits `run_cancelled`. `usage` frames carry cumulative input/output/call totals for the run.
 
 Event indexes are zero-based and stable for the life of the run. Pass the last received index as `after` to skip frames already applied on the client.
 
