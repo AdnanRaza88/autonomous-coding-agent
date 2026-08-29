@@ -11,7 +11,7 @@ RUN npm install --omit=dev=false
 
 FROM deps AS web
 WORKDIR /app/packages/web
-RUN npm run build --if-present || true
+RUN npm run build
 
 FROM node:20-bookworm-slim
 WORKDIR /app
