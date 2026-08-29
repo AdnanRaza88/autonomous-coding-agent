@@ -1,4 +1,5 @@
 import { denied } from "./errors.js"
+import type { PermissionStore } from "./persist.js"
 import type {
   PermissionDecision,
   PermissionHandler,
@@ -8,7 +9,9 @@ import type {
 
 const rules: PermissionRule[] = []
 let handler: PermissionHandler | undefined
+let store: PermissionStore | undefined
 let seq = 0
+let muteFlush = false
 
 export function permissionKey(request: PermissionRequest): string {
   return [
@@ -24,6 +27,25 @@ export function setPermissionHandler(next: PermissionHandler | undefined): void 
   handler = next
 }
 
+export function setPermissionStore(next: PermissionStore | undefined): void {
+  store = next
+}
+
+export function loadPersistedRules(): PermissionRule[] {
+  if (!store) return []
+  muteFlush = true
+  try {
+    const loaded = store.load().filter((r) => r.persist === "always")
+    const keep = rules.filter((r) => r.persist !== "always")
+    rules.length = 0
+    rules.push(...keep, ...loaded)
+    for (const rule of loaded) bumpSeq(rule.id)
+    return loaded.map((r) => ({ ...r }))
+  } finally {
+    muteFlush = false
+  }
+}
+
 export function addPermissionRule(partial: Omit<PermissionRule, "id"> & { id?: string }): PermissionRule {
   const rule: PermissionRule = {
     id: partial.id ?? `rule_${++seq}`,
@@ -37,7 +59,9 @@ export function addPermissionRule(partial: Omit<PermissionRule, "id"> & { id?: s
   if (partial.command) rule.command = partial.command
   if (partial.action) rule.action = partial.action
   if (partial.expiresAt) rule.expiresAt = partial.expiresAt
+  bumpSeq(rule.id)
   rules.push(rule)
+  flush()
   return rule
 }
 
@@ -102,25 +126,49 @@ export function removePermissionRule(id: string): boolean {
   const idx = rules.findIndex((r) => r.id === id)
   if (idx < 0) return false
   rules.splice(idx, 1)
+  flush()
   return true
 }
 
 export function revokeGrants(): void {
   rules.length = 0
+  flush()
 }
 
 export function clearSessionGrants(): void {
+  let changed = false
   for (let i = rules.length - 1; i >= 0; i--) {
-    if (rules[i].persist === "session") rules.splice(i, 1)
+    if (rules[i].persist === "session") {
+      rules.splice(i, 1)
+      changed = true
+    }
   }
+  if (changed) flush()
 }
 
 function prune(): void {
   const now = Date.now()
+  let changed = false
   for (let i = rules.length - 1; i >= 0; i--) {
     const exp = rules[i].expiresAt
-    if (exp && exp <= now) rules.splice(i, 1)
+    if (exp && exp <= now) {
+      rules.splice(i, 1)
+      changed = true
+    }
   }
+  if (changed) flush()
+}
+
+function flush(): void {
+  if (muteFlush || !store) return
+  store.save(rules.filter((r) => r.persist === "always").map((r) => ({ ...r })))
+}
+
+function bumpSeq(id: string): void {
+  const m = /^rule_(\d+)$/.exec(id)
+  if (!m) return
+  const n = Number(m[1])
+  if (Number.isFinite(n) && n > seq) seq = n
 }
 
 export function matchRule(request: PermissionRequest): PermissionRule | undefined {
