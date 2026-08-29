@@ -152,6 +152,61 @@ test("control plane serves catalog, saved keys, runs, commands, and mcp", async 
   await handle.close()
 })
 
+test("probe reports missing keys and POST /api/runs rejects them", async () => {
+  resetControlPlaneState()
+  const dataDir = mkdtempSync(join(tmpdir(), "ac-probe-"))
+  const handle = await createApp({
+    dataDir,
+    probe: async (config) => {
+      if (!config.apiKey) return { ok: false, latencyMs: 1, code: "missing_key", message: "no stored key" }
+      if (config.apiKey === "fail") return { ok: false, latencyMs: 2, code: "auth", message: "rejected" }
+      return { ok: true, latencyMs: 3 }
+    },
+  })
+  const missing = await handle.app.inject({ method: "POST", url: "/api/providers/groq/probe" })
+  assert.equal(missing.statusCode, 200)
+  assert.equal(missing.json().ok, false)
+  assert.equal(missing.json().code, "missing_key")
+
+  const blocked = await handle.app.inject({
+    method: "POST",
+    url: "/api/runs",
+    payload: { goal: "no key", providerId: "groq", model: "llama-3.3-70b-versatile" },
+  })
+  assert.equal(blocked.statusCode, 400)
+  assert.match(blocked.json().error, /no stored key/)
+
+  await handle.app.inject({
+    method: "POST",
+    url: "/api/providers",
+    payload: {
+      id: "groq",
+      baseUrl: "https://api.groq.com/openai/v1",
+      apiKey: "fail",
+      model: "llama-3.3-70b-versatile",
+      contextWindow: 128000,
+    },
+  })
+  const bad = await handle.app.inject({ method: "POST", url: "/api/providers/groq/probe" })
+  assert.equal(bad.json().ok, false)
+  assert.equal(bad.json().code, "auth")
+
+  await handle.app.inject({
+    method: "POST",
+    url: "/api/providers",
+    payload: {
+      id: "groq",
+      baseUrl: "https://api.groq.com/openai/v1",
+      apiKey: "gsk-ok",
+      model: "llama-3.3-70b-versatile",
+      contextWindow: 128000,
+    },
+  })
+  const good = await handle.app.inject({ method: "POST", url: "/api/providers/groq/probe" })
+  assert.equal(good.json().ok, true)
+  await handle.close()
+})
+
 test("POST /api/runs/:id/cancel stops an in-flight run", async () => {
   resetControlPlaneState()
   const dataDir = mkdtempSync(join(tmpdir(), "ac-cancel-"))
@@ -192,12 +247,18 @@ test("POST /api/runs/:id/cancel stops an in-flight run", async () => {
     payload: { goal: "slow work", providerId: "groq" },
   })
   const runId = start.json().runId as string
+  assert.ok(runId)
   const cancel = await handle.app.inject({ method: "POST", url: `/api/runs/${runId}/cancel` })
   assert.equal(cancel.statusCode, 200)
   assert.equal(cancel.json().cancelled, true)
-  await new Promise((r) => setTimeout(r, 50))
-  const snap = await handle.app.inject({ method: "GET", url: `/api/runs/${runId}` })
-  assert.ok(snap.json().status === "cancelled" || snap.json().events.some((e: { type: string }) => e.type === "run_cancelled"))
+  let snapBody: { status?: string; events?: { type: string }[] } = {}
+  for (let i = 0; i < 20; i++) {
+    const snap = await handle.app.inject({ method: "GET", url: `/api/runs/${runId}` })
+    snapBody = snap.json()
+    if (snapBody.status === "cancelled" || snapBody.events?.some((e) => e.type === "run_cancelled")) break
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  assert.ok(snapBody.status === "cancelled" || snapBody.events?.some((e) => e.type === "run_cancelled"))
   await handle.close()
 })
 
