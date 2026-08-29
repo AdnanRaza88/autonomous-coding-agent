@@ -16,13 +16,7 @@ Layer rules:
 - A task includes: objective, expected output format, explicit boundaries, and what not to touch.
 
 SharedSpec block (required in plan.md, fenced as shared-spec):
-```shared-spec
-{
-  "goal": "...",
-  "constraints": { "key": "value" },
-  "styleGuide": { "key": "value" }
-}
-```
+` + "```shared-spec\n{\n  \"goal\": \"...\",\n  \"constraints\": { \"key\": \"value\" },\n  \"styleGuide\": { \"key\": \"value\" }\n}\n```" + `
 
 Task format in tasks.md:
 - id: short slug (t1, t2, ...)

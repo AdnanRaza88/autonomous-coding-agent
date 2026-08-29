@@ -3,6 +3,7 @@ import { join } from "node:path"
 import Fastify, { type FastifyInstance } from "fastify"
 import { bootstrapRuntime, type BootstrapOptions, type Runtime } from "./bootstrap.js"
 import { registerControlPlane, type ControlPlaneOptions } from "./control-plane.js"
+import { registerKnowledgePlane } from "./knowledge-plane.js"
 import { DEFAULT_PORT } from "./paths.js"
 import { VERSION } from "./version.js"
 import { DeploySecurityError } from "./errors.js"
@@ -97,6 +98,7 @@ export async function createApp(opts: ServerOptions = {}): Promise<AppHandle> {
   })
 
   await registerControlPlane(app, runtime, { runOptions: opts.runOptions })
+  await registerKnowledgePlane(app, runtime)
 
   const webRoot = opts.webRoot ?? process.env.AGENT_CORE_WEB_ROOT
   if (webRoot && existsSync(webRoot)) {

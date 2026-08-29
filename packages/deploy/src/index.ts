@@ -15,5 +15,11 @@ export { createApp, startServer, webDistGuess } from "./server.js"
 export type { ServerOptions, AppHandle } from "./server.js"
 export { registerControlPlane, resetControlPlaneState } from "./control-plane.js"
 export type { ControlPlaneOptions } from "./control-plane.js"
+export {
+  registerKnowledgePlane,
+  resetKnowledgePlane,
+  bindRunWorkspace,
+  rememberCompletedRun,
+} from "./knowledge-plane.js"
 export { formatSse, parseSseBlock, SSE_HEADERS } from "./sse.js"
 export { resolveDataDir, dataLayout, DEFAULT_PORT, DEFAULT_DATA_DIR } from "./paths.js"
