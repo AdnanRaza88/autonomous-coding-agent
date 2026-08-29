@@ -9,6 +9,7 @@ services:
     environment:
       AGENT_CORE_DATA: /data
       PORT: "3000"
+      AGENT_CORE_MEMORY_MODE: http
       AUTOMEM_URL: http://automem:8000
       GRAPHITI_URL: http://graphiti:8000
     volumes:
