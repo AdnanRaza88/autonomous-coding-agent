@@ -13,7 +13,10 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:integration": "npm run test -w @agent-core/integration-tests",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "start": "npm start -w @agent-core/deploy",
+    "dev:web": "npm run dev -w @agent-core/web",
+    "dev": "npm start -w @agent-core/deploy"
   },
   "engines": {
     "node": ">=20"
