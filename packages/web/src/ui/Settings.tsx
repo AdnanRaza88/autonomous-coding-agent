@@ -1,12 +1,15 @@
 import { useState } from "react"
-import type { McpServerDraft, SaveProviderRequest, SavedProvider } from "../api/contract"
+import type { McpServerDraft, PermissionRuleView, SaveProviderRequest, SavedProvider } from "../api/contract"
 
 export function Settings(props: {
   providers: { id: string; name: string }[]
   saved: SavedProvider[]
   servers: McpServerDraft[]
+  rules: PermissionRuleView[]
   onSaveProvider: (body: SaveProviderRequest) => Promise<void>
   onConnectServer: (body: McpServerDraft) => Promise<void>
+  onRevokeRule: (id: string) => Promise<void>
+  onClearSession: () => Promise<void>
 }) {
   const [form, setForm] = useState<SaveProviderRequest>({
     id: props.providers[0]?.id ?? "groq",
@@ -132,6 +135,44 @@ export function Settings(props: {
             </li>
           ))}
         </ul>
+      </section>
+      <section className="lg:col-span-2">
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-medium">Permission grants</h2>
+            <p className="mt-1 text-sm text-muted">Always-grants survive restart. Session grants last until expiry or clear.</p>
+          </div>
+          <button
+            type="button"
+            className="text-xs text-muted"
+            onClick={() => void props.onClearSession()}
+          >
+            Clear session
+          </button>
+        </div>
+        {props.rules.length === 0 ? (
+          <p className="mt-4 text-sm text-muted">No stored grants.</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-[var(--line)] text-sm">
+            {props.rules.map((rule) => (
+              <li key={rule.id} className="flex items-center justify-between gap-4 py-2">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-xs">
+                    {rule.effect} {rule.scope} {rule.action ?? rule.toolName ?? rule.serverId ?? rule.kind ?? rule.id}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {rule.persist}
+                    {rule.serverId ? ` / ${rule.serverId}` : ""}
+                    {rule.expiresAt ? ` / until ${new Date(rule.expiresAt).toISOString()}` : ""}
+                  </p>
+                </div>
+                <button type="button" className="shrink-0 text-xs text-muted" onClick={() => void props.onRevokeRule(rule.id)}>
+                  Revoke
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   )
