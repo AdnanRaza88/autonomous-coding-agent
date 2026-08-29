@@ -5,9 +5,10 @@ import { startSpaProxy, type SpaProxyHandle } from "./spa-proxy.js"
 import { DiffBridge } from "./diff.js"
 import { extensionManifest, sidebarHtml } from "./contributions.js"
 import { IdeShellError } from "./errors.js"
+import { watchIdeRun, type LiveHandle } from "./live.js"
 import { DEFAULT_PROXY_PORT } from "./ports.js"
 import { encodeWorkspaceKey } from "./workspace.js"
-import type { AgentServeHandle, IdeHostOptions, SidebarTarget } from "./types.js"
+import type { AgentServeHandle, IdeHostOptions, SidebarTarget, StatusSnapshot } from "./types.js"
 
 export interface IdeHost {
   serve: AgentServeHandle
@@ -16,6 +17,7 @@ export interface IdeHost {
   sidebar: SidebarTarget
   manifest: Record<string, unknown>
   html: string
+  watchRun: (runId: string, onStatus: (status: StatusSnapshot) => void) => LiveHandle
   stop: () => Promise<void>
 }
 
@@ -44,6 +46,7 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
   })
   const iframeUrl = proxy.iframeUrl(workspace)
   const diffs = new DiffBridge()
+  const live: LiveHandle[] = []
   return {
     serve,
     proxy,
@@ -55,7 +58,17 @@ export async function createIdeHost(opts: IdeHostOptions = {}): Promise<IdeHost>
     },
     manifest: extensionManifest(),
     html: sidebarHtml(iframeUrl),
+    watchRun(runId, onStatus) {
+      const handle = watchIdeRun({
+        origin: serve.endpoints.origin,
+        runId,
+        onStatus,
+      })
+      live.push(handle)
+      return handle
+    },
     stop: async () => {
+      for (const handle of live) handle.close()
       await proxy.close()
       await serve.stop()
     },

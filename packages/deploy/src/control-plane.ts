@@ -16,7 +16,7 @@ import {
 import type { PermissionDecision, PermissionRequest } from "@agent-core/mcp-hooks-plugins"
 import { getSubagentDefinition, listSubagentDefinitions, registerSubagentDefinition } from "@agent-core/subagents"
 import type { Runtime } from "./bootstrap.js"
-import { formatSse, SSE_HEADERS } from "./sse.js"
+import { formatSse, parseEventCursor, SSE_HEADERS } from "./sse.js"
 
 type Draft = {
   id: string
@@ -291,9 +291,11 @@ export async function registerControlPlane(
       reply.code(404)
       return { error: `unknown run ${req.params.id}` }
     }
+    const stored = runtime.store.getRun(req.params.id)
     return {
       runId: rec.id,
       status: rec.status,
+      goal: stored?.goal,
       tasks: rec.tasks.map(cloneTask),
       results: rec.results.map(cloneResult),
       events: rec.events.slice(),
@@ -301,22 +303,32 @@ export async function registerControlPlane(
     }
   })
 
-  app.get<{ Params: { id: string } }>("/api/runs/:id/events", async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { after?: string } }>("/api/runs/:id/events", async (req, reply) => {
     const rec = getRecord(req.params.id)
     if (!rec) {
       reply.code(404)
       return { error: `unknown run ${req.params.id}` }
     }
+    const headerId = Array.isArray(req.headers["last-event-id"])
+      ? req.headers["last-event-id"][0]
+      : req.headers["last-event-id"]
+    const after = Math.max(parseEventCursor(req.query.after), parseEventCursor(headerId))
     openSse(reply)
+    let index = after
     try {
-      for await (const event of getRunEvents(req.params.id)) {
+      for await (const event of getRunEvents(req.params.id, after)) {
         if (req.raw.destroyed) break
+        index += 1
         reply.raw.write(
-          formatSse("orchestrator", {
-            channel: "orchestrator",
-            runId: req.params.id,
-            event,
-          }),
+          formatSse(
+            "orchestrator",
+            {
+              channel: "orchestrator",
+              runId: req.params.id,
+              event,
+            },
+            index,
+          ),
         )
       }
     } catch (err) {

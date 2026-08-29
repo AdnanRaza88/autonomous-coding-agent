@@ -57,10 +57,10 @@ export async function createRun(
   return runId
 }
 
-export async function* getRunEvents(runId: string): AsyncIterable<OrchestratorEvent> {
+export async function* getRunEvents(runId: string, after = -1): AsyncIterable<OrchestratorEvent> {
   const rec = getRecord(runId)
   if (!rec) throw new Error(`unknown run: ${runId}`)
-  let cursor = 0
+  let cursor = Number.isFinite(after) ? Math.max(-1, Math.floor(after)) + 1 : 0
   while (true) {
     const current = requireRecord(runId)
     while (cursor < current.events.length) {

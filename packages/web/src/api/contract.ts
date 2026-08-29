@@ -70,6 +70,7 @@ export interface StartRunResponse {
 export interface RunSnapshot {
   runId: string
   status: "planning" | "running" | "complete" | "error"
+  goal?: string
   tasks: AgentTask[]
   results: AgentResult[]
   events: OrchestratorEvent[]

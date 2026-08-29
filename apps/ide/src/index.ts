@@ -12,6 +12,14 @@ export {
   vscodeCommandContributions,
 } from "./commands.js"
 export { emptyStatus, foldEvent, statusBarText, statusFromTasks } from "./status.js"
+export {
+  fetchRunSnapshot,
+  permissionEventsUrl,
+  runEventsUrl,
+  runSnapshotUrl,
+  statusFromSnapshot,
+  watchIdeRun,
+} from "./live.js"
 export { DARK_COLORS, LIGHT_COLORS, THEME_PAIR, nextTheme, themeForKind } from "./theme.js"
 export { encodeWorkspaceKey, decodeWorkspaceKey, sidebarPath } from "./workspace.js"
 export { DEFAULT_BACKEND_PORT, DEFAULT_PROXY_PORT, LOOPBACK, loopbackOrigin, nextFreePort, portFree } from "./ports.js"

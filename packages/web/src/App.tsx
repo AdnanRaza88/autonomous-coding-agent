@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from "react"
+import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { PermissionPrompt, SavedProvider, SlashCommandInfo, SubagentDraft } from "./api/contract"
 import { createHttpApi } from "./api/client"
 import { createMockApi, createMockBus } from "./api/mock"
@@ -10,7 +10,7 @@ import { SubagentBuilder } from "./ui/SubagentBuilder"
 import { Settings } from "./ui/Settings"
 import { PermissionModal } from "./ui/PermissionModal"
 import { CommandPalette } from "./ui/CommandPalette"
-import { emptyRun, reduceRun, type RunView } from "./state/events"
+import { emptyRun, hydrateRun, reduceRun, type RunView } from "./state/events"
 import { applyTheme, type ThemeMode } from "./theme/tokens"
 import { readStoredTheme, toggleTheme, writeStoredTheme } from "./theme/persist"
 import { parseComposer } from "./lib/filter"
@@ -18,10 +18,12 @@ import { parseComposer } from "./lib/filter"
 type Screen = "run" | "agents" | "settings"
 
 const useLiveBackend = import.meta.env.VITE_API_MODE !== "mock"
+const LAST_RUN_KEY = "agent-core.last-run"
 
 export function App() {
   const bus = useMemo(() => createMockBus(), [])
   const api = useMemo(() => (useLiveBackend ? createHttpApi() : createMockApi(bus)), [bus])
+  const cursorRef = useRef(-1)
 
   const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme(window.localStorage))
   const [screen, setScreen] = useState<Screen>("run")
@@ -40,6 +42,8 @@ export function App() {
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState("")
+
+  cursorRef.current = run.cursor
 
   useEffect(() => {
     applyTheme(theme)
@@ -67,6 +71,18 @@ export function App() {
       setModels(mods)
       setModel(mods[0]?.id ?? "")
       setSaved(await api.listSavedProviders())
+      if (useLiveBackend) {
+        const remembered = window.sessionStorage.getItem(LAST_RUN_KEY)
+        if (remembered) {
+          try {
+            const snap = await api.getRun(remembered)
+            if (!alive) return
+            setRun({ kind: "hydrate", snapshot: snap })
+          } catch {
+            window.sessionStorage.removeItem(LAST_RUN_KEY)
+          }
+        }
+      }
     })()
     return () => {
       alive = false
@@ -85,9 +101,15 @@ export function App() {
 
   useEffect(() => {
     if (!useLiveBackend || !run.runId) return
-    const stream = watchRunEvents(run.runId, (msg) => {
-      setRun({ kind: "event", event: msg.event })
-    })
+    window.sessionStorage.setItem(LAST_RUN_KEY, run.runId)
+    const stream = watchRunEvents(
+      run.runId,
+      (msg) => {
+        setRun({ kind: "event", event: msg.event })
+      },
+      undefined,
+      { after: cursorRef.current },
+    )
     return () => stream.close()
   }, [run.runId])
 
@@ -115,7 +137,12 @@ export function App() {
     setBusy(true)
     try {
       const started = await api.startRun({ goal, providerId, model })
-      setRun({ kind: "start", runId: started.runId, goal })
+      try {
+        const snap = await api.getRun(started.runId)
+        setRun({ kind: "hydrate", snapshot: { ...snap, goal } })
+      } catch {
+        setRun({ kind: "start", runId: started.runId, goal })
+      }
       setDraft("")
       setScreen("run")
     } catch (err) {
@@ -222,11 +249,15 @@ export function App() {
 
 type ViewAction =
   | { kind: "start"; runId: string; goal: string }
+  | { kind: "hydrate"; snapshot: import("./api/contract").RunSnapshot }
   | { kind: "event"; event: import("@agent-core/types").OrchestratorEvent }
 
 function reduceView(view: RunView, action: ViewAction): RunView {
   if (action.kind === "start") {
-    return { ...emptyRun(), runId: action.runId, goal: action.goal, phase: "planning", log: ["planning"] }
+    return { ...emptyRun(), runId: action.runId, goal: action.goal, phase: "planning", log: ["planning"], cursor: -1 }
+  }
+  if (action.kind === "hydrate") {
+    return hydrateRun(action.snapshot)
   }
   return reduceRun(view, action.event)
 }
