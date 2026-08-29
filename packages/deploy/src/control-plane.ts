@@ -1,13 +1,8 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import type { AgentResult, AgentTask, ProviderConfig } from "@agent-core/types"
 import { getProviderModels, listBuiltinProviders } from "@agent-core/providers"
-import { createRun, getRecord } from "@agent-core/graph-engine"
+import { createRun, getRecord, getRunEvents } from "@agent-core/graph-engine"
 import type { CreateRunOptions } from "@agent-core/graph-engine"
-import {
-  getSubagentDefinition,
-  listSubagentDefinitions,
-  registerSubagentDefinition,
-} from "@agent-core/subagents"
 import {
   connectMcpServer,
   getServerConfig,
@@ -19,7 +14,9 @@ import {
   setPermissionHandler,
 } from "@agent-core/mcp-hooks-plugins"
 import type { PermissionDecision, PermissionRequest } from "@agent-core/mcp-hooks-plugins"
+import { getSubagentDefinition, listSubagentDefinitions, registerSubagentDefinition } from "@agent-core/subagents"
 import type { Runtime } from "./bootstrap.js"
+import { formatSse, SSE_HEADERS } from "./sse.js"
 
 type Draft = {
   id: string
@@ -49,6 +46,7 @@ type Pending = {
 
 let seq = 0
 const pending = new Map<string, Pending>()
+const permissionWatchers = new Set<(prompt: Prompt) => void>()
 
 export type ControlPlaneOptions = {
   runOptions?: CreateRunOptions
@@ -243,6 +241,22 @@ export async function registerControlPlane(
 
   app.get("/api/permissions", async () => ({ pending: [...pending.values()].map((p) => p.prompt) }))
 
+  app.get("/api/permissions/events", async (req, reply) => {
+    openSse(reply)
+    for (const item of pending.values()) {
+      reply.raw.write(formatSse("permission", { channel: "permission", prompt: item.prompt }))
+    }
+    const send = (prompt: Prompt) => {
+      try {
+        reply.raw.write(formatSse("permission", { channel: "permission", prompt }))
+      } catch {
+        permissionWatchers.delete(send)
+      }
+    }
+    permissionWatchers.add(send)
+    await waitUntilClosed(req, () => permissionWatchers.delete(send))
+  })
+
   app.post<{ Body: { goal?: string; providerId?: string; model?: string } }>(
     "/api/runs",
     async (req, reply) => {
@@ -285,6 +299,57 @@ export async function registerControlPlane(
       events: rec.events.slice(),
       error: rec.error,
     }
+  })
+
+  app.get<{ Params: { id: string } }>("/api/runs/:id/events", async (req, reply) => {
+    const rec = getRecord(req.params.id)
+    if (!rec) {
+      reply.code(404)
+      return { error: `unknown run ${req.params.id}` }
+    }
+    openSse(reply)
+    try {
+      for await (const event of getRunEvents(req.params.id)) {
+        if (req.raw.destroyed) break
+        reply.raw.write(
+          formatSse("orchestrator", {
+            channel: "orchestrator",
+            runId: req.params.id,
+            event,
+          }),
+        )
+      }
+    } catch (err) {
+      reply.raw.write(
+        formatSse("orchestrator", {
+          channel: "orchestrator",
+          runId: req.params.id,
+          event: { type: "error", message: err instanceof Error ? err.message : String(err) },
+        }),
+      )
+    } finally {
+      if (!reply.raw.writableEnded) reply.raw.end()
+    }
+  })
+}
+
+function openSse(reply: FastifyReply): void {
+  reply.hijack()
+  reply.raw.writeHead(200, SSE_HEADERS)
+  reply.raw.write(": connected\n\n")
+}
+
+function waitUntilClosed(req: FastifyRequest, onClose: () => void): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => {
+      onClose()
+      resolve()
+    }
+    if (req.raw.destroyed) {
+      finish()
+      return
+    }
+    req.raw.once("close", finish)
   })
 }
 
@@ -356,6 +421,7 @@ function installPermissionBridge(): void {
     if (request.toolName) prompt.toolName = request.toolName
     if (request.command) prompt.command = request.command
     if (request.detail) prompt.detail = request.detail
+    for (const fn of permissionWatchers) fn(prompt)
     return await new Promise<PermissionDecision>((resolve) => {
       pending.set(id, { prompt, request, resolve })
     })
@@ -385,5 +451,6 @@ function cloneResult(result: AgentResult): AgentResult {
 
 export function resetControlPlaneState(): void {
   pending.clear()
+  permissionWatchers.clear()
   seq = 0
 }

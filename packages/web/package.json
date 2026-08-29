@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "VITE_API_MODE=mock vite",
+    "dev:live": "VITE_API_MODE=live vite",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "test": "tsx --test src/**/*.test.ts"

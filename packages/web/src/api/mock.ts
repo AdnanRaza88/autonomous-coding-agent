@@ -84,6 +84,7 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
     connected: true,
   })
   const runs = new Map<string, RunSnapshot>()
+  const prompts = new Map<string, PermissionPrompt>()
   let seq = 0
 
   return {
@@ -151,8 +152,11 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       servers.set(body.id, next)
       return next
     },
+    async listPermissions() {
+      return { pending: [...prompts.values()] }
+    },
     async decidePermission(id, decision) {
-      void id
+      prompts.delete(id)
       void decision
     },
   }
@@ -177,7 +181,7 @@ async function simulateRun(
   runId: string,
   tasks: AgentTask[],
   runs: Map<string, RunSnapshot>,
-  bus: MockBus
+  bus: MockBus,
 ): Promise<void> {
   const emit = (event: OrchestratorEvent) => {
     const snap = runs.get(runId)
@@ -206,7 +210,7 @@ async function simulateRun(
         const output = `${node.title} complete`
         emit({ type: "agent_done", taskId: node.id, output })
         results.push({ taskId: node.id, output, attempt: 1, passed: true })
-      })
+      }),
     )
   }
 

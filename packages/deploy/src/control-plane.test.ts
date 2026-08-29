@@ -7,6 +7,7 @@ import type { AgentResult, AgentTask, ChatMessage, ProviderConfig, SharedSpec } 
 import { setMcpConnector } from "@agent-core/mcp-hooks-plugins"
 import { createApp } from "./server.js"
 import { resetControlPlaneState } from "./control-plane.js"
+import { parseSseBlock } from "./sse.js"
 
 test("control plane serves catalog, saved keys, runs, commands, and mcp", async () => {
   resetControlPlaneState()
@@ -86,6 +87,20 @@ test("control plane serves catalog, saved keys, runs, commands, and mcp", async 
   assert.ok(snap.tasks.length >= 1)
   assert.ok(snap.events.some((e: { type: string }) => e.type === "planning"))
   assert.ok(snap.status === "complete" || snap.status === "running" || snap.status === "planning")
+
+  const stream = await app.inject({
+    method: "GET",
+    url: `/api/runs/${runId}/events`,
+    headers: { accept: "text/event-stream" },
+  })
+  assert.equal(stream.statusCode, 200)
+  assert.match(stream.headers["content-type"] as string, /text\/event-stream/)
+  const frames = parseSseBlock(stream.body)
+  assert.ok(frames.some((f) => f.event === "orchestrator"))
+  const types = frames
+    .filter((f) => f.event === "orchestrator")
+    .map((f) => JSON.parse(f.data).event?.type)
+  assert.ok(types.includes("planning"))
 
   const commands = await app.inject({ method: "GET", url: "/api/commands" })
   assert.equal(commands.statusCode, 200)

@@ -2,7 +2,7 @@
 
 Local-first coding agent platform. TypeScript monorepo.
 
-All numbered modules (00-12) are on `main`. Current work is product hardening: the Fastify boot server now implements the web control-plane contract against the real packages instead of the UI mock.
+All numbered modules (00-12) are on `main`. The boot server implements the web control-plane contract, including live Server-Sent Event streams for run progress and permission prompts. Production UI builds talk to that HTTP API instead of the in-package mock.
 
 ## Packages
 

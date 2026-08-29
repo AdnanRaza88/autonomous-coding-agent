@@ -102,6 +102,7 @@ export interface AgentCoreApi {
   runCommand(name: string, args: string[]): Promise<{ output: string }>
   listMcpServers(): Promise<McpServerDraft[]>
   connectMcpServer(body: McpServerDraft): Promise<McpServerDraft>
+  listPermissions(): Promise<{ pending: PermissionPrompt[] }>
   decidePermission(id: string, decision: PermissionChoice): Promise<void>
 }
 
