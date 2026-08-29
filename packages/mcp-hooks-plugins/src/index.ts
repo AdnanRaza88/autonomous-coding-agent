@@ -27,11 +27,17 @@ export { defaultMcpConfig, defaultMcpServers } from "./defaults.js"
 export { McpError } from "./errors.js"
 export { clearHooks, listHooks, registerHook, runHooks, unregisterHook } from "./hooks.js"
 export {
+  addPermissionRule,
   askPermission,
   clearSessionGrants,
+  denySession,
   grantAlways,
+  grantServerSession,
   grantSession,
+  listPermissionRules,
+  matchRule,
   permissionKey,
+  removePermissionRule,
   requestPermission,
   revokeGrants,
   setPermissionHandler,
@@ -50,6 +56,8 @@ export type {
   PermissionKind,
   PermissionRequest,
   PermissionRisk,
+  PermissionRule,
+  PermissionScope,
   RunContext,
   SlashCommandDefinition,
 } from "./types.js"
