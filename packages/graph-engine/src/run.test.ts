@@ -9,7 +9,7 @@ import type {
   SharedSpec,
 } from "@agent-core/types"
 import { clearRuns } from "./blackboard.js"
-import { createRun, getRunEvents, getRunState, waitForRun } from "./run.js"
+import { cancelRun, createRun, getRunEvents, getRunState, waitForRun } from "./run.js"
 
 const config: ProviderConfig = {
   id: "mock",
@@ -60,8 +60,8 @@ test("createRun produces a spec and task DAG before returning", async () => {
     maxRetries: 1,
   })
   const state = getRunState(runId)
-  assert.equal(state.spec.goal.length > 0, true)
-  assert.ok(state.spec.styleGuide?.theme === "light" || state.spec.constraints.language === "TypeScript")
+  assert.equal(state.spec!.goal.length > 0, true)
+  assert.ok(state.spec?.styleGuide?.theme === "light" || state.spec?.constraints.language === "TypeScript")
   assert.equal(state.tasks.length, 2)
   assert.deepEqual(state.tasks.map((t) => t.id).sort(), ["t1", "t2"])
   await waitForRun(runId)
@@ -229,4 +229,38 @@ test("failed dependency skips dependents", async () => {
 
 test("empty goal is rejected", async () => {
   await assert.rejects(() => createRun("   ", config), /empty/)
+})
+
+test("cancelRun stops remaining work and emits run_cancelled", async () => {
+  clearRuns()
+  let started = 0
+  const gate = new Promise<void>((resolve) => {
+    setTimeout(resolve, 30)
+  })
+  const runId = await createRun("abort mid flight", config, {
+    chat: chatScript({
+      plan: JSON.stringify({
+        tasks: [
+          { id: "t1", title: "Slow", instructions: "sleep", dependsOn: [], role: "coder" },
+          { id: "t2", title: "After", instructions: "later", dependsOn: ["t1"], role: "coder" },
+        ],
+      }),
+    }),
+    maxRetries: 1,
+    runTask: async (task) => {
+      started += 1
+      await gate
+      await new Promise((r) => setTimeout(r, 80))
+      return { taskId: task.id, output: task.id, attempt: 1, passed: true }
+    },
+  })
+  assert.equal(cancelRun(runId), true)
+  await waitForRun(runId)
+  const state = getRunState(runId)
+  assert.equal(state.status, "cancelled")
+  const types: string[] = []
+  for await (const event of getRunEvents(runId)) types.push(event.type)
+  assert.ok(types.includes("run_cancelled"))
+  assert.equal(types.includes("run_complete"), false)
+  assert.ok(started <= 1)
 })
