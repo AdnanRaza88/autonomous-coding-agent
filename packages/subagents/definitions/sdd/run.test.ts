@@ -24,59 +24,80 @@ function scripted(replies: string[]): ProviderAdapter {
   }
 }
 
-const constitution = `# Constitution
-- Testing: unit tests for every public function
-- Style: no comments in code
-- Architecture: isolate modules behind public APIs
-- Done: tests pass and the public API matches the spec
-`
+const constitution = [
+  "# Constitution",
+  "- Testing: unit tests for every public function",
+  "- Style: no comments in code",
+  "- Architecture: isolate modules behind public APIs",
+  "- Done: tests pass and the public API matches the spec",
+].join("\n")
 
-const specDoc = `# Spec
-Users need a local notes app.
+const specDoc = [
+  "# Spec",
+  "Users need a local notes app.",
+  "",
+  "## Requirements",
+  "- R1 Create a note",
+  "- R2 Persist notes on disk",
+  "",
+  "## Non-goals",
+  "- Multiplayer sync",
+].join("\n")
 
-## Requirements
-- R1 Create a note
-- R2 Persist notes on disk
+const specWithQuestions = [
+  "# Spec",
+  "Users want a game.",
+  "",
+  "## Requirements",
+  "- R1 A playable session exists",
+  "",
+  "## Open questions",
+  "1. First-person or top-down?",
+  "2. Day sky or night sky?",
+].join("\n")
 
-## Non-goals
-- Multiplayer sync
-`
+const planDoc = [
+  "# Plan",
+  "## Decisions",
+  "- D1 SQLite file storage serves R2",
+  "- D2 Notes module serves R1",
+  "",
+  "```shared-spec",
+  '{"goal":"local notes app","constraints":{"persistence":"sqlite file"},"styleGuide":{"comments":"none"}}',
+  "```",
+].join("\n")
 
-const specWithQuestions = `# Spec
-Users want a game.
+const tasksDoc = [
+  "### t1 — schema",
+  "- dependsOn: none",
+  "- tracesTo: D1",
+  "- instructions: create notes table. tracesTo D1",
+  "- output: migration file",
+  "- doNotTouch: UI",
+  "",
+  "### t2 — create note",
+  "- dependsOn: t1",
+  "- tracesTo: D2",
+  "- instructions: implement createNote. tracesTo D2",
+].join("\n")
 
-## Requirements
-- R1 A playable session exists
+const analyzeDoc = "No gaps.\nVerdict: ready"
 
-## Open questions
-1. First-person or top-down?
-2. Day sky or night sky?
-`
+const questionedPlan = [
+  "# Plan",
+  "## Open questions",
+  "1. Camera style?",
+  "D1 session loop serves R1",
+  "```shared-spec",
+  '{"goal":"game","constraints":{}}',
+  "```",
+].join("\n")
 
-const planDoc = `# Plan
-## Decisions
-- D1 SQLite file storage serves R2
-- D2 Notes module serves R1
-
-```shared-spec
-{"goal":"local notes app","constraints":{"persistence":"sqlite file"},"styleGuide":{"comments":"none"}}
-```
-`
-
-const tasksDoc = `### t1 — schema
-- dependsOn: none
-- tracesTo: D1
-- instructions: create notes table. tracesTo D1
-- output: migration file
-- doNotTouch: UI
-
-### t2 — create note
-- dependsOn: t1
-- tracesTo: D2
-- instructions: implement createNote. tracesTo D2
-`
-
-const analyzeDoc = `No gaps.\nVerdict: ready`
+const questionedTasks = [
+  "### t1 — session",
+  "- tracesTo: D1",
+  "- instructions: stub session tracesTo D1",
+].join("\n")
 
 describe("runSddSubagent", () => {
   it("runs constitution, spec, plan, tasks, analyze in order", async () => {
@@ -100,8 +121,8 @@ describe("runSddSubagent", () => {
     const adapter = scripted([
       constitution,
       specWithQuestions,
-      `# Plan\n## Open questions\n1. Camera style?\nD1 session loop serves R1\n```shared-spec\n{"goal":"game","constraints":{}}\n```",
-      `### t1 — session\n- tracesTo: D1\n- instructions: stub session tracesTo D1\n`,
+      questionedPlan,
+      questionedTasks,
       "Verdict: blocked",
     ])
     const result = await runSddSubagent("build a game", config, { adapter })
@@ -113,7 +134,7 @@ describe("runSddSubagent", () => {
   it("rejects an empty goal", async () => {
     await assert.rejects(
       () => runSddSubagent("  ", config, { adapter: scripted([]) }),
-      /non-empty/
+      /non-empty/,
     )
   })
 
