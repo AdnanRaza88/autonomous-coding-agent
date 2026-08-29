@@ -24,7 +24,12 @@ export function RunHistory(props: {
               onClick={() => props.onOpen(row.id)}
             >
               <span className="block truncate text-xs">{row.goal || row.id}</span>
-              <span className="font-mono text-[10px] uppercase tracking-wide">{row.status}</span>
+              <span className="font-mono text-[10px] uppercase tracking-wide">
+                {row.status}
+                {row.inputTokens || row.outputTokens
+                  ? ` · ${(row.inputTokens ?? 0) + (row.outputTokens ?? 0)} tok`
+                  : ""}
+              </span>
             </button>
           </li>
         )

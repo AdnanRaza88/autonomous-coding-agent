@@ -32,6 +32,12 @@ export type StoredRun = {
   status: string
   createdAt: string
   payload?: unknown
+  providerId?: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+  calls?: number
+  estimatedUsd?: number
 }
 
 type StoreDoc = {
