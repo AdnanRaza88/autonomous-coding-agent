@@ -5,6 +5,7 @@ import type {
   AgentCoreApi,
   McpServerDraft,
   PermissionPrompt,
+  PermissionRuleView,
   ProviderModel,
   ProviderSummary,
   RunSnapshot,
@@ -88,6 +89,7 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
   const summaries = new Map<string, RunSummary>()
   const aborted = new Set<string>()
   const prompts = new Map<string, PermissionPrompt>()
+  const rules = new Map<string, PermissionRuleView>()
   let seq = 0
 
   return {
@@ -184,11 +186,50 @@ export function createMockApi(bus: MockBus): AgentCoreApi {
       return { pending: [...prompts.values()] }
     },
     async decidePermission(id, decision) {
+      const prompt = prompts.get(id) ?? {
+        id,
+        kind: "mcp_tool",
+        action: id,
+        risk: "high",
+      }
       prompts.delete(id)
-      void decision
+      if (decision === "allow_always") {
+        rules.set(`rule_${id}`, {
+          id: `rule_${id}`,
+          effect: "allow",
+          scope: "exact",
+          persist: "always",
+          kind: prompt.kind,
+          serverId: prompt.serverId,
+          toolName: prompt.toolName,
+          command: prompt.command,
+          action: prompt.action,
+        })
+      }
+      if (decision === "allow_session" || decision === "allow_server" || decision === "deny_session") {
+        rules.set(`rule_${id}`, {
+          id: `rule_${id}`,
+          effect: decision === "deny_session" ? "deny" : "allow",
+          scope: decision === "allow_server" ? "server" : "exact",
+          persist: "session",
+          kind: prompt.kind,
+          serverId: prompt.serverId,
+          toolName: decision === "allow_server" ? undefined : prompt.toolName,
+          command: prompt.command,
+          action: prompt.action,
+        })
+      }
+    },
+    async listPermissionRules() {
+      return [...rules.values()]
+    },
+    async removePermissionRule(id) {
+      rules.delete(id)
     },
     async clearPermissionSession() {
-      return
+      for (const [id, rule] of rules) {
+        if (rule.persist === "session") rules.delete(id)
+      }
     },
   }
 }

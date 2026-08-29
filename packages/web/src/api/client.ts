@@ -4,6 +4,7 @@ import type {
   McpServerDraft,
   PermissionChoice,
   PermissionPrompt,
+  PermissionRuleView,
   ProviderModel,
   ProviderSummary,
   RunSnapshot,
@@ -93,6 +94,12 @@ export function createHttpApi(baseUrl = ""): AgentCoreApi {
         method: "POST",
         body: JSON.stringify({ decision }),
       }),
+    listPermissionRules: async () => {
+      const body = await request<{ rules: PermissionRuleView[] }>("/api/permissions/rules")
+      return body.rules
+    },
+    removePermissionRule: (id) =>
+      request<void>(`/api/permissions/rules/${encodeURIComponent(id)}`, { method: "DELETE" }),
     clearPermissionSession: () => request<void>("/api/permissions/session", { method: "DELETE" }),
   }
 }

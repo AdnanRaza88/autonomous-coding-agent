@@ -63,6 +63,19 @@ export type PermissionChoice =
   | "allow_server"
   | "deny_session"
 
+export interface PermissionRuleView {
+  id: string
+  effect: "allow" | "deny"
+  scope: "exact" | "tool" | "server" | "kind"
+  persist: "session" | "always"
+  kind?: PermissionPrompt["kind"]
+  serverId?: string
+  toolName?: string
+  command?: string
+  action?: string
+  expiresAt?: number
+}
+
 export interface StartRunRequest {
   goal: string
   providerId: string
@@ -120,6 +133,8 @@ export interface AgentCoreApi {
   connectMcpServer(body: McpServerDraft): Promise<McpServerDraft>
   listPermissions(): Promise<{ pending: PermissionPrompt[] }>
   decidePermission(id: string, decision: PermissionChoice): Promise<void>
+  listPermissionRules(): Promise<PermissionRuleView[]>
+  removePermissionRule(id: string): Promise<void>
   clearPermissionSession(): Promise<void>
 }
 

@@ -76,3 +76,17 @@ test("upserted subagent is listed immediately", async () => {
   const ids = (await api.listSubagents()).map((s) => s.id)
   assert.ok(ids.includes("reviewer"))
 })
+
+test("session grants clear while always grants stay until revoke", async () => {
+  const api = createMockApi(createMockBus())
+  await api.decidePermission("perm_session", "allow_session")
+  await api.decidePermission("perm_always", "allow_always")
+  const both = await api.listPermissionRules()
+  assert.equal(both.length, 2)
+  await api.clearPermissionSession()
+  const leftover = await api.listPermissionRules()
+  assert.equal(leftover.length, 1)
+  assert.equal(leftover[0]?.persist, "always")
+  await api.removePermissionRule(leftover[0]!.id)
+  assert.equal((await api.listPermissionRules()).length, 0)
+})

@@ -6,15 +6,19 @@ import type { CreateRunOptions } from "@agent-core/graph-engine"
 import {
   clearSessionGrants,
   connectMcpServer,
+  filePermissionStore,
   getServerConfig,
   listConfiguredServers,
   listConnectedServers,
   listPermissionRules,
   listSlashCommands,
+  loadPersistedRules,
   rememberServerConfig,
   removePermissionRule,
+  revokeGrants,
   runSlashCommand,
   setPermissionHandler,
+  setPermissionStore,
 } from "@agent-core/mcp-hooks-plugins"
 import type { PermissionDecision, PermissionRequest } from "@agent-core/mcp-hooks-plugins"
 import { getSubagentDefinition, listSubagentDefinitions, registerSubagentDefinition } from "@agent-core/subagents"
@@ -69,6 +73,8 @@ export async function registerControlPlane(
   runtime: Runtime,
   options: ControlPlaneOptions = {},
 ): Promise<void> {
+  setPermissionStore(filePermissionStore(runtime.layout.grantsPath))
+  loadPersistedRules()
   installPermissionBridge()
 
   app.get("/api/providers", async () => listBuiltinProviders())
@@ -533,4 +539,7 @@ export function resetControlPlaneState(): void {
   pending.clear()
   permissionWatchers.clear()
   seq = 0
+  setPermissionStore(undefined)
+  revokeGrants()
+  setPermissionHandler(undefined)
 }
