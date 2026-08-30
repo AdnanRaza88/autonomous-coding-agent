@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { emptyRun, reduceRun } from "../state/events.ts"
-import { buildTranscript, composeFollowUpGoal, formatTranscript, isLivePhase, isSettledPhase } from "./transcript.ts"
+import { buildTranscript, canRetry, composeFollowUpGoal, composeRetryGoal, formatTranscript, isLivePhase, isSettledPhase } from "./transcript.ts"
 
 test("idle run with no goal yields no turns", () => {
   assert.deepEqual(buildTranscript(emptyRun()), [])
@@ -116,4 +116,16 @@ test("phase helpers", () => {
   assert.equal(isLivePhase("complete"), false)
   assert.equal(isSettledPhase("cancelled"), true)
   assert.equal(isSettledPhase("planning"), false)
+})
+
+test("retry uses the original goal", () => {
+  const view = {
+    ...emptyRun(),
+    goal: "Follow-up on a prior run.\nOriginal goal:\nadd rate limits\nNew request:\nalso log 429s",
+    phase: "error" as const,
+  }
+  assert.equal(composeRetryGoal(view), "add rate limits")
+  assert.equal(canRetry("error"), true)
+  assert.equal(canRetry("cancelled"), true)
+  assert.equal(canRetry("complete"), false)
 })
