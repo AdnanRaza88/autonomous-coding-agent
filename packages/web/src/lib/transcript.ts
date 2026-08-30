@@ -118,3 +118,11 @@ export function isLivePhase(phase: RunView["phase"]): boolean {
 export function isSettledPhase(phase: RunView["phase"]): boolean {
   return phase === "complete" || phase === "error" || phase === "cancelled"
 }
+
+export function canRetry(phase: RunView["phase"]): boolean {
+  return phase === "error" || phase === "cancelled"
+}
+
+export function composeRetryGoal(view: RunView): string {
+  return seedGoal(view.goal ?? "").trim()
+}
