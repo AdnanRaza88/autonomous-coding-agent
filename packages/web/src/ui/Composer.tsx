@@ -12,20 +12,25 @@ export function Composer(props: {
   locked?: boolean
   follow?: boolean
   onSubmit: () => void
+  onStop?: () => void
   onBlocked?: () => void
 }) {
+  function send() {
+    if (props.blocked) {
+      props.onBlocked?.()
+      return
+    }
+    if (props.locked) return
+    props.onSubmit()
+  }
+
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-[var(--paper)] via-[var(--paper)] to-transparent px-4 pb-5 pt-12">
       <form
         className="pointer-events-auto mx-auto max-w-3xl"
         onSubmit={(e) => {
           e.preventDefault()
-          if (props.blocked) {
-            props.onBlocked?.()
-            return
-          }
-          if (props.locked) return
-          props.onSubmit()
+          send()
         }}
       >
         <div className="glass rounded-2xl p-1.5 shadow-[0_12px_40px_-16px_color-mix(in_oklab,var(--ink)_28%,transparent)]">
@@ -36,7 +41,7 @@ export function Composer(props: {
                 props.blocked
                   ? "Connect a provider before sending a goal."
                   : props.locked
-                    ? "This run is still working. Cancel it to send something else."
+                    ? "This run is still working. Stop it to send something else."
                     : props.follow
                       ? "Continue this run. Type / for commands."
                       : "Message Agent Core. Type / for commands."
@@ -46,14 +51,14 @@ export function Composer(props: {
               onChange={(e) => props.onChange(e.target.value)}
               rows={2}
               onKeyDown={(e) => {
+                if (e.key === "Escape" && props.locked) {
+                  e.preventDefault()
+                  props.onStop?.()
+                  return
+                }
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault()
-                  if (props.blocked) {
-                    props.onBlocked?.()
-                    return
-                  }
-                  if (props.locked) return
-                  props.onSubmit()
+                  send()
                 }
               }}
             />
@@ -83,17 +88,29 @@ export function Composer(props: {
                   ))}
                 </select>
               </div>
-              <button
-                type="submit"
-                disabled={props.busy || props.locked || !props.value.trim()}
-                className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--paper)] transition-opacity disabled:opacity-40"
-              >
-                {props.blocked ? "Connect" : props.busy ? "Starting" : props.locked ? "Running" : props.follow ? "Continue" : "Send"}
-              </button>
+              {props.locked ? (
+                <button
+                  type="button"
+                  className="rounded-lg border border-line px-3.5 py-1.5 text-xs font-medium text-ink transition-opacity hover:bg-[color-mix(in_oklab,var(--ink)_6%,transparent)]"
+                  onClick={() => props.onStop?.()}
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={props.busy || !props.value.trim()}
+                  className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--paper)] transition-opacity disabled:opacity-40"
+                >
+                  {props.blocked ? "Connect" : props.busy ? "Starting" : props.follow ? "Continue" : "Send"}
+                </button>
+              )}
             </div>
           </div>
         </div>
-        <p className="mt-2 text-center font-mono text-[10px] text-muted">Ctrl or Cmd + Enter to send</p>
+        <p className="mt-2 text-center font-mono text-[10px] text-muted">
+          {props.locked ? "Esc to stop" : "Ctrl or Cmd + Enter to send"}
+        </p>
       </form>
     </div>
   )
