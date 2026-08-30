@@ -37,7 +37,8 @@ import { applyTheme, type ThemeMode } from "./theme/tokens"
 import { readStoredTheme, toggleTheme, writeStoredTheme } from "./theme/persist"
 import { parseComposer } from "./lib/filter"
 import { needsOnboarding, readyProvider } from "./lib/onboarding"
-import { composeFollowUpGoal, formatTranscript, isLivePhase, isSettledPhase } from "./lib/transcript"
+import { canRetry, composeFollowUpGoal, composeRetryGoal, formatTranscript, isLivePhase, isSettledPhase } from "./lib/transcript"
+import { pickModel, pickProvider, readLastModel, readLastProvider, writeLastModel, writeLastProvider } from "./lib/session"
 
 const useLiveBackend = import.meta.env.VITE_API_MODE !== "mock"
 const LAST_RUN_KEY = "agent-core.last-run"
@@ -108,12 +109,12 @@ export function App() {
       setServers(mlist)
       setHistory(rlist)
       setRules(grants)
-      const first = plist[0]?.id ?? "groq"
+      const first = pickProvider(plist, readLastProvider(window.localStorage))
       setProviderId(first)
       const mods = await api.listProviderModels(first)
       if (!alive) return
       setModels(mods)
-      setModel(mods[0]?.id ?? "")
+      setModel(pickModel(mods, readLastModel(window.localStorage)))
       setSaved(await api.listSavedProviders())
       const remembered = window.sessionStorage.getItem(LAST_RUN_KEY)
       const resume = remembered ?? rlist[0]?.id
@@ -221,9 +222,12 @@ export function App() {
 
   async function onProviderChange(id: string) {
     setProviderId(id)
+    writeLastProvider(window.localStorage, id)
     const mods = await api.listProviderModels(id)
     setModels(mods)
-    setModel(mods[0]?.id ?? "")
+    const next = pickModel(mods, readLastModel(window.localStorage))
+    setModel(next)
+    writeLastModel(window.localStorage, next)
   }
 
   const usable = readyProvider(saved, providerId)
@@ -240,7 +244,10 @@ export function App() {
       setProviderId(body.id)
       const mods = await api.listProviderModels(body.id)
       setModels(mods)
-      setModel(body.model || mods[0]?.id || "")
+      const nextModel = body.model || mods[0]?.id || ""
+      setModel(nextModel)
+      writeLastProvider(window.localStorage, body.id)
+      writeLastModel(window.localStorage, nextModel)
       const probe = await api.probeProvider(body.id)
       if (!probe.ok) {
         setProbeStatus(probe.message ?? probe.code ?? "probe failed")
@@ -290,14 +297,33 @@ export function App() {
     }
     const message = draft.trim()
     if (!message) return
+    const goal = isSettledPhase(run.phase) ? composeFollowUpGoal(run, message) : message
+    await startGoal(goal)
+  }
+
+  async function abortRun() {
+    if (!run.runId) return
+    try {
+      await api.cancelRun(run.runId)
+      const snap = await api.getRun(run.runId)
+      setRun({ kind: "hydrate", snapshot: snap })
+      await refreshHistory()
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function startGoal(goal: string) {
+    if (!goal.trim()) return
     if (isLivePhase(run.phase)) return
     if (!readyProvider(saved, providerId)) {
       setForceOnboard(true)
       return
     }
-    const goal = isSettledPhase(run.phase) ? composeFollowUpGoal(run, message) : message
     setBusy(true)
     try {
+      writeLastProvider(window.localStorage, providerId)
+      writeLastModel(window.localStorage, model)
       const started = await api.startRun({ goal, providerId, model })
       try {
         const snap = await api.getRun(started.runId)
@@ -315,16 +341,9 @@ export function App() {
     }
   }
 
-  async function abortRun() {
-    if (!run.runId) return
-    try {
-      await api.cancelRun(run.runId)
-      const snap = await api.getRun(run.runId)
-      setRun({ kind: "hydrate", snapshot: snap })
-      await refreshHistory()
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err))
-    }
+  async function retryRun() {
+    if (!canRetry(run.phase)) return
+    await startGoal(composeRetryGoal(run))
   }
 
   async function runSlash(name: string, args: string[]) {
@@ -360,6 +379,7 @@ export function App() {
                   window.sessionStorage.setItem("agent-core.run-surface", next)
                 }}
                 onCancel={() => void abortRun()}
+                onRetry={() => void retryRun()}
                 copied={copied}
                 onCopy={() => {
                   const text = formatTranscript(run)
@@ -391,12 +411,16 @@ export function App() {
             onProvider={onProviderChange}
             model={model}
             models={models}
-            onModel={setModel}
+            onModel={(id) => {
+              setModel(id)
+              writeLastModel(window.localStorage, id)
+            }}
             busy={busy}
             blocked={blocked}
             locked={isLivePhase(run.phase)}
             follow={isSettledPhase(run.phase)}
             onSubmit={() => void submitGoal()}
+            onStop={() => void abortRun()}
             onBlocked={() => setForceOnboard(true)}
           />
           {paletteOpen ? (
