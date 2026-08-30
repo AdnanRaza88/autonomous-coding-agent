@@ -1,4 +1,8 @@
 import { registerSubagentDefinition, type SubagentDefinition } from "./definitions.js"
+import { installDefinition } from "../definitions/install/definition.js"
+import { searchDefinition } from "../definitions/search/definition.js"
+import { memoryDefinition } from "../definitions/memory/definition.js"
+import { webTeamDefinitions } from "../definitions/teams/web/definition.js"
 
 const DEFAULT_MODEL = "llama-3.3-70b-versatile"
 const DEFAULT_CONTEXT = 131072
@@ -84,6 +88,10 @@ Rules:
     maxContextTokens: DEFAULT_CONTEXT,
     tools: [],
   },
+  installDefinition,
+  searchDefinition,
+  memoryDefinition,
+  ...webTeamDefinitions,
 ]
 
 export function ensureBuiltinsRegistered(): void {
