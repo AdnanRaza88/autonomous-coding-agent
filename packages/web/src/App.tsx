@@ -24,6 +24,7 @@ import { watchPermissions, watchRunEvents } from "./api/stream"
 import { Layout, type Screen } from "./ui/Layout"
 import { Composer } from "./ui/Composer"
 import { AgentTree } from "./ui/AgentTree"
+import { ChatThread } from "./ui/ChatThread"
 import { SubagentBuilder } from "./ui/SubagentBuilder"
 import { Settings } from "./ui/Settings"
 import { PermissionModal } from "./ui/PermissionModal"
@@ -341,7 +342,11 @@ export function App() {
       {screen === "run" ? (
         <div className="relative flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <AgentTree view={run} onCancel={() => void abortRun()} onHint={setDraft} />
+            {run.phase === "idle" ? (
+              <AgentTree view={run} onHint={setDraft} />
+            ) : (
+              <ChatThread view={run} onCancel={() => void abortRun()} />
+            )}
           </div>
           <Composer
             value={draft}
