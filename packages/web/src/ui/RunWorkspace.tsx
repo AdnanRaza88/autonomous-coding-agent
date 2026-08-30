@@ -12,6 +12,7 @@ export function RunWorkspace(props: {
   surface: RunSurface
   onSurface: (next: RunSurface) => void
   onCancel?: () => void
+  onRetry?: () => void
   onCopy?: () => void
   onNew?: () => void
   copied?: boolean
@@ -67,6 +68,15 @@ export function RunWorkspace(props: {
               onClick={props.onCopy}
             >
               {props.copied ? "Copied" : "Copy"}
+            </button>
+          ) : null}
+          {!live && props.onRetry && (view.phase === "error" || view.phase === "cancelled") ? (
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:text-ink"
+              onClick={props.onRetry}
+            >
+              Retry
             </button>
           ) : null}
           {!live && props.onNew ? (
