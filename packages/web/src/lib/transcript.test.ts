@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { emptyRun, reduceRun } from "../state/events.ts"
-import { buildTranscript } from "./transcript.ts"
+import { buildTranscript, composeFollowUpGoal, formatTranscript, isLivePhase, isSettledPhase } from "./transcript.ts"
 
 test("idle run with no goal yields no turns", () => {
   assert.deepEqual(buildTranscript(emptyRun()), [])
@@ -59,4 +59,61 @@ test("complete appends a summary status", () => {
   const last = buildTranscript(view).at(-1)
   assert.equal(last?.kind, "status")
   assert.match(last && last.kind === "status" ? last.text : "", /1 of 1/)
+})
+
+test("formatTranscript is a plain copyable thread", () => {
+  let view = emptyRun()
+  view = { ...view, goal: "add rate limits" }
+  view = reduceRun(view, {
+    type: "plan_ready",
+    tasks: [{ id: "a", title: "Write limiter", instructions: "", dependsOn: [], status: "queued" }],
+  })
+  view = reduceRun(view, { type: "agent_done", taskId: "a", output: "token bucket in middleware" })
+  view = reduceRun(view, {
+    type: "run_complete",
+    results: [{ taskId: "a", output: "token bucket in middleware", attempt: 1, passed: true }],
+  })
+  const text = formatTranscript(view)
+  assert.match(text, /You/)
+  assert.match(text, /add rate limits/)
+  assert.match(text, /Write limiter/)
+  assert.match(text, /token bucket/)
+})
+
+test("composeFollowUpGoal wraps the prior thread", () => {
+  let view = emptyRun()
+  view = { ...view, goal: "add rate limits" }
+  view = reduceRun(view, {
+    type: "plan_ready",
+    tasks: [{ id: "a", title: "Write limiter", instructions: "", dependsOn: [], status: "queued" }],
+  })
+  view = reduceRun(view, { type: "agent_done", taskId: "a", output: "token bucket" })
+  const goal = composeFollowUpGoal(view, "also log 429s")
+  assert.match(goal, /Original goal/)
+  assert.match(goal, /add rate limits/)
+  assert.match(goal, /token bucket/)
+  assert.match(goal, /also log 429s/)
+})
+
+test("composeFollowUpGoal on idle is just the message", () => {
+  assert.equal(composeFollowUpGoal(emptyRun(), "  ship it  "), "ship it")
+})
+
+test("composeFollowUpGoal does not nest prior follow-ups", () => {
+  const view = {
+    ...emptyRun(),
+    goal: "Follow-up on a prior run.\nOriginal goal:\nadd rate limits\nNew request:\nalso log 429s",
+    phase: "complete" as const,
+  }
+  const goal = composeFollowUpGoal(view, "tighten the window")
+  assert.equal((goal.match(/Original goal:/g) ?? []).length, 1)
+  assert.match(goal, /add rate limits/)
+  assert.match(goal, /tighten the window/)
+})
+
+test("phase helpers", () => {
+  assert.equal(isLivePhase("running"), true)
+  assert.equal(isLivePhase("complete"), false)
+  assert.equal(isSettledPhase("cancelled"), true)
+  assert.equal(isSettledPhase("planning"), false)
 })
