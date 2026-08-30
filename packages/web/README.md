@@ -6,11 +6,11 @@ Production builds (`npm run build`) use `createHttpApi` against same-origin `/ap
 
 Live runs hydrate from `GET /api/runs/:id` then subscribe to `GET /api/runs/:id/events`. The EventSource reconnects with exponential backoff and `?after=<last index>` so a dropped connection does not replay work already folded into the DAG. `run_complete`, `run_cancelled`, and `error` close the stream. Run history comes from `GET /api/runs`. The last run id is kept in `sessionStorage` so a reload resumes the same snapshot.
 
-An active run renders as a chat transcript: the goal as the user turn, each worker as an assistant block that grows on `agent_delta`, and a short status line when the run ends. The idle screen keeps the empty-state hints.
+An active run renders as a chat transcript: the goal as the user turn, each worker as an assistant block that grows on `agent_delta`, and a short status line when the run ends. Chat stays primary; Plan shows the same DAG in topological batches so parallel work is visible. The last surface is kept in `sessionStorage`. The idle screen keeps the empty-state hints.
 
 ## Screens
 
-- Run: chat transcript of the live goal, streaming worker drafts, provider/model pickers, cancel while planning or running
+- Run: chat transcript of the live goal, streaming worker drafts, Chat/Plan toggle over the live DAG, provider/model pickers, cancel while planning or running
 - History: sidebar list of persisted runs; click to hydrate
 - Subagents: create/edit/delete definitions; the next `startRun` sees the new list without a reload
 - Knowledge: AutoMem/Graphiti health and recall, fact edits, Obsidian vault notes and wiki-link graph
