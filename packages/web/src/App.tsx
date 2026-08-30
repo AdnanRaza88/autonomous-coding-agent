@@ -24,7 +24,7 @@ import { watchPermissions, watchRunEvents } from "./api/stream"
 import { Layout, type Screen } from "./ui/Layout"
 import { Composer } from "./ui/Composer"
 import { AgentTree } from "./ui/AgentTree"
-import { ChatThread } from "./ui/ChatThread"
+import { RunWorkspace, type RunSurface } from "./ui/RunWorkspace"
 import { SubagentBuilder } from "./ui/SubagentBuilder"
 import { Settings } from "./ui/Settings"
 import { PermissionModal } from "./ui/PermissionModal"
@@ -77,6 +77,9 @@ export function App() {
   const [probeBusy, setProbeBusy] = useState(false)
   const [probeStatus, setProbeStatus] = useState("")
   const [forceOnboard, setForceOnboard] = useState(false)
+  const [surface, setSurface] = useState<RunSurface>(() =>
+    window.sessionStorage.getItem("agent-core.run-surface") === "plan" ? "plan" : "chat",
+  )
 
   cursorRef.current = run.cursor
 
@@ -345,7 +348,15 @@ export function App() {
             {run.phase === "idle" ? (
               <AgentTree view={run} onHint={setDraft} />
             ) : (
-              <ChatThread view={run} onCancel={() => void abortRun()} />
+              <RunWorkspace
+                view={run}
+                surface={surface}
+                onSurface={(next) => {
+                  setSurface(next)
+                  window.sessionStorage.setItem("agent-core.run-surface", next)
+                }}
+                onCancel={() => void abortRun()}
+              />
             )}
           </div>
           <Composer
