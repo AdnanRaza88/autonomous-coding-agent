@@ -435,7 +435,12 @@ async function simulateRun(
       batch.map(async (node) => {
         if (aborted.has(runId)) return
         emit({ type: "agent_start", taskId: node.id })
-        await wait(40)
+        const output = `${node.title} complete`
+        for (const piece of splitDraft(output)) {
+          if (aborted.has(runId)) return
+          emit({ type: "agent_delta", taskId: node.id, text: piece })
+          await wait(18)
+        }
         if (aborted.has(runId)) return
         calls += 1
         inputTokens += 80
@@ -448,8 +453,6 @@ async function simulateRun(
           pass: true,
           feedback: "checks passed",
         })
-        const output = `${node.title} complete`
-        emit({ type: "agent_delta", taskId: node.id, text: output })
         emit({ type: "agent_done", taskId: node.id, output })
         results.push({ taskId: node.id, output, attempt: 1, passed: true })
       }),
@@ -458,6 +461,11 @@ async function simulateRun(
 
   if (aborted.has(runId)) return
   emit({ type: "run_complete", results })
+}
+
+function splitDraft(text: string): string[] {
+  const parts = text.match(/\S+\s*/g)
+  return parts && parts.length ? parts : [text]
 }
 
 export function applyEvent(snap: RunSnapshot, event: OrchestratorEvent): void {
