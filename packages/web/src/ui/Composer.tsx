@@ -9,6 +9,8 @@ export function Composer(props: {
   onModel: (id: string) => void
   busy: boolean
   blocked?: boolean
+  locked?: boolean
+  follow?: boolean
   onSubmit: () => void
   onBlocked?: () => void
 }) {
@@ -22,6 +24,7 @@ export function Composer(props: {
             props.onBlocked?.()
             return
           }
+          if (props.locked) return
           props.onSubmit()
         }}
       >
@@ -32,8 +35,13 @@ export function Composer(props: {
               placeholder={
                 props.blocked
                   ? "Connect a provider before sending a goal."
-                  : "Message Agent Core. Type / for commands."
+                  : props.locked
+                    ? "This run is still working. Cancel it to send something else."
+                    : props.follow
+                      ? "Continue this run. Type / for commands."
+                      : "Message Agent Core. Type / for commands."
               }
+              disabled={props.locked}
               value={props.value}
               onChange={(e) => props.onChange(e.target.value)}
               rows={2}
@@ -44,6 +52,7 @@ export function Composer(props: {
                     props.onBlocked?.()
                     return
                   }
+                  if (props.locked) return
                   props.onSubmit()
                 }
               }}
@@ -76,10 +85,10 @@ export function Composer(props: {
               </div>
               <button
                 type="submit"
-                disabled={props.busy || !props.value.trim()}
+                disabled={props.busy || props.locked || !props.value.trim()}
                 className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--paper)] transition-opacity disabled:opacity-40"
               >
-                {props.blocked ? "Connect" : props.busy ? "Starting" : "Send"}
+                {props.blocked ? "Connect" : props.busy ? "Starting" : props.locked ? "Running" : props.follow ? "Continue" : "Send"}
               </button>
             </div>
           </div>

@@ -37,6 +37,7 @@ import { applyTheme, type ThemeMode } from "./theme/tokens"
 import { readStoredTheme, toggleTheme, writeStoredTheme } from "./theme/persist"
 import { parseComposer } from "./lib/filter"
 import { needsOnboarding, readyProvider } from "./lib/onboarding"
+import { composeFollowUpGoal, formatTranscript, isLivePhase, isSettledPhase } from "./lib/transcript"
 
 const useLiveBackend = import.meta.env.VITE_API_MODE !== "mock"
 const LAST_RUN_KEY = "agent-core.last-run"
@@ -80,6 +81,7 @@ export function App() {
   const [surface, setSurface] = useState<RunSurface>(() =>
     window.sessionStorage.getItem("agent-core.run-surface") === "plan" ? "plan" : "chat",
   )
+  const [copied, setCopied] = useState(false)
 
   cursorRef.current = run.cursor
 
@@ -286,12 +288,14 @@ export function App() {
       setPaletteOpen(true)
       return
     }
-    const goal = draft.trim()
-    if (!goal) return
+    const message = draft.trim()
+    if (!message) return
+    if (isLivePhase(run.phase)) return
     if (!readyProvider(saved, providerId)) {
       setForceOnboard(true)
       return
     }
+    const goal = isSettledPhase(run.phase) ? composeFollowUpGoal(run, message) : message
     setBusy(true)
     try {
       const started = await api.startRun({ goal, providerId, model })
@@ -356,6 +360,23 @@ export function App() {
                   window.sessionStorage.setItem("agent-core.run-surface", next)
                 }}
                 onCancel={() => void abortRun()}
+                copied={copied}
+                onCopy={() => {
+                  const text = formatTranscript(run)
+                  if (!text) return
+                  void navigator.clipboard.writeText(text).then(
+                    () => {
+                      setCopied(true)
+                      window.setTimeout(() => setCopied(false), 1600)
+                    },
+                    () => setNotice("clipboard unavailable"),
+                  )
+                }}
+                onNew={() => {
+                  setRun({ kind: "reset" })
+                  window.sessionStorage.removeItem(LAST_RUN_KEY)
+                  setCopied(false)
+                }}
               />
             )}
           </div>
@@ -373,6 +394,8 @@ export function App() {
             onModel={setModel}
             busy={busy}
             blocked={blocked}
+            locked={isLivePhase(run.phase)}
+            follow={isSettledPhase(run.phase)}
             onSubmit={() => void submitGoal()}
             onBlocked={() => setForceOnboard(true)}
           />
@@ -515,8 +538,10 @@ type ViewAction =
   | { kind: "start"; runId: string; goal: string }
   | { kind: "hydrate"; snapshot: import("./api/contract").RunSnapshot }
   | { kind: "event"; event: import("@agent-core/types").OrchestratorEvent }
+  | { kind: "reset" }
 
 function reduceView(view: RunView, action: ViewAction): RunView {
+  if (action.kind === "reset") return emptyRun()
   if (action.kind === "start") {
     return { ...emptyRun(), runId: action.runId, goal: action.goal, phase: "planning", log: ["planning"], cursor: -1 }
   }

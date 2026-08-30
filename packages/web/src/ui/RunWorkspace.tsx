@@ -12,6 +12,9 @@ export function RunWorkspace(props: {
   surface: RunSurface
   onSurface: (next: RunSurface) => void
   onCancel?: () => void
+  onCopy?: () => void
+  onNew?: () => void
+  copied?: boolean
 }) {
   const { view, surface } = props
   const end = useRef<HTMLDivElement>(null)
@@ -56,15 +59,35 @@ export function RunWorkspace(props: {
             </p>
           ) : null}
         </div>
-        {live && props.onCancel ? (
-          <button
-            type="button"
-            className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:text-ink"
-            onClick={props.onCancel}
-          >
-            Cancel
-          </button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {props.onCopy ? (
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:text-ink"
+              onClick={props.onCopy}
+            >
+              {props.copied ? "Copied" : "Copy"}
+            </button>
+          ) : null}
+          {!live && props.onNew ? (
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:text-ink"
+              onClick={props.onNew}
+            >
+              New
+            </button>
+          ) : null}
+          {live && props.onCancel ? (
+            <button
+              type="button"
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-muted transition-colors hover:text-ink"
+              onClick={props.onCancel}
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {surface === "chat" ? (
